@@ -48,8 +48,8 @@
       #rox-chat-widget,
       #rox-chat-widget * {
         box-sizing: border-box;
-        margin: 0;
-        padding: 0;
+        margin: 5px;
+        padding: 5px;
         font-family: 'Inter', system-ui, -apple-system, sans-serif;
         -webkit-font-smoothing: antialiased;
       }
