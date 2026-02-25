@@ -336,6 +336,9 @@
   ];
 
   function buildWidget() {
+    // Prevent duplicate widget DOM
+    if (document.getElementById('rox-chat-widget')) return;
+
     const container = document.createElement('div');
     container.id = 'rox-chat-widget';
     container.innerHTML = `
@@ -568,6 +571,10 @@
   }
 
   function init() {
+    // Prevent double initialization (SiteGround optimizer can load script twice)
+    if (window._roxChatInitialized) return;
+    window._roxChatInitialized = true;
+
     injectStyles(); buildWidget(); cacheElements(); attachListeners();
     const restored = restoreSession();
     if (!restored && !state.isOpen) setTimeout(() => { els.badge.style.display = 'flex'; }, 3000);
