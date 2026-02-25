@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ROX Heating & Air - Denver's Trusted HVAC Experts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: 'DM Sans', system-ui, sans-serif;
+      color: #1D3557;
+      background: #f8f9fb;
+      line-height: 1.6;
+    }
+
+    /* ===== NAV ===== */
+    nav {
+      background: #1D3557;
+      color: white;
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav-brand {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 22px;
+      font-weight: 800;
+      color: #E63946;
+      letter-spacing: -0.02em;
+    }
+    .nav-links { display: flex; gap: 28px; }
+    .nav-links a {
+      color: rgba(255,255,255,0.8);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: white; }
+    .nav-phone {
+      background: #E63946;
+      color: white;
+      padding: 8px 20px;
+      border-radius: 24px;
+      font-weight: 600;
+      text-decoration: none;
+      font-size: 14px;
+    }
+
+    /* ===== HERO ===== */
+    .hero {
+      background: linear-gradient(135deg, #1D3557 0%, #264573 60%, #2d5287 100%);
+      color: white;
+      padding: 80px 32px;
+      text-align: center;
+    }
+    .hero h1 {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: clamp(32px, 5vw, 56px);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      max-width: 700px;
+      margin: 0 auto 20px;
+    }
+    .hero h1 span { color: #E63946; }
+    .hero p {
+      font-size: 18px;
+      opacity: 0.85;
+      max-width: 540px;
+      margin: 0 auto 36px;
+    }
+    .hero-cta {
+      display: inline-flex;
+      gap: 12px;
+    }
+    .btn-primary {
+      background: #E63946;
+      color: white;
+      padding: 14px 32px;
+      border-radius: 28px;
+      font-weight: 600;
+      font-size: 16px;
+      text-decoration: none;
+      transition: transform 0.2s, box-shadow 0.2s;
+      border: none;
+      cursor: pointer;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(230,57,70,0.35);
+    }
+    .btn-secondary {
+      background: rgba(255,255,255,0.12);
+      color: white;
+      padding: 14px 32px;
+      border-radius: 28px;
+      font-weight: 600;
+      font-size: 16px;
+      text-decoration: none;
+      border: 1.5px solid rgba(255,255,255,0.3);
+    }
+
+    /* ===== SERVICES GRID ===== */
+    .services {
+      padding: 72px 32px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .services h2 {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 36px;
+      font-weight: 800;
+      text-align: center;
+      margin-bottom: 48px;
+      letter-spacing: -0.02em;
+    }
+    .service-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 24px;
+    }
+    .service-card {
+      background: white;
+      border-radius: 16px;
+      padding: 32px 24px;
+      text-align: center;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .service-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    }
+    .service-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 16px;
+      background: #fef2f2;
+      color: #E63946;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      margin: 0 auto 16px;
+    }
+    .service-card h3 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .service-card p {
+      font-size: 14px;
+      color: #64748b;
+    }
+
+    /* ===== INFO BAR ===== */
+    .info-bar {
+      background: #E63946;
+      color: white;
+      padding: 24px 32px;
+      display: flex;
+      justify-content: center;
+      gap: 48px;
+      flex-wrap: wrap;
+    }
+    .info-item {
+      text-align: center;
+    }
+    .info-item strong { display: block; font-size: 28px; font-weight: 800; }
+    .info-item span { font-size: 13px; opacity: 0.9; }
+
+    /* ===== FOOTER ===== */
+    footer {
+      background: #1D3557;
+      color: rgba(255,255,255,0.6);
+      padding: 40px 32px;
+      text-align: center;
+      font-size: 14px;
+    }
+    footer a { color: rgba(255,255,255,0.8); text-decoration: none; }
+
+    /* ===== DEMO BANNER ===== */
+    .demo-banner {
+      background: linear-gradient(90deg, #f59e0b, #f97316);
+      color: white;
+      text-align: center;
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .demo-banner code {
+      background: rgba(0,0,0,0.2);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      .hero { padding: 48px 20px; }
+      .info-bar { gap: 24px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Demo notice -->
+  <div class="demo-banner">
+    🚀 Chat Widget Demo — The floating chat bubble in the bottom-right is the ROX AI chatbot.
+    Try clicking it!
+  </div>
+
+  <!-- Navigation -->
+  <nav>
+    <div class="nav-brand">ROX</div>
+    <div class="nav-links">
+      <a href="#">Heating</a>
+      <a href="#">Cooling</a>
+      <a href="#">Water Heaters</a>
+      <a href="#">Estimates</a>
+      <a href="#">About</a>
+    </div>
+    <a href="tel:3035550199" class="nav-phone">📞 (303) 555-0199</a>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <h1>Denver's Most Trusted <span>HVAC Experts</span></h1>
+    <p>Fast, reliable heating and cooling service. Available 24/7 with AI-powered scheduling for your convenience.</p>
+    <div class="hero-cta">
+      <button class="btn-primary" onclick="document.getElementById('rox-chat-bubble')?.click()">
+        💬 Chat with Us Now
+      </button>
+      <a href="tel:3035550199" class="btn-secondary">📞 Call Us</a>
+    </div>
+  </section>
+
+  <!-- Stats -->
+  <div class="info-bar">
+    <div class="info-item"><strong>67</strong><span>Zip Codes Served</span></div>
+    <div class="info-item"><strong>24/7</strong><span>AI Scheduling</span></div>
+    <div class="info-item"><strong>$148</strong><span>Service Call (Waived w/ Repair)</span></div>
+    <div class="info-item"><strong>2yr</strong><span>Installation Warranty</span></div>
+  </div>
+
+  <!-- Services -->
+  <section class="services">
+    <h2>Our Services</h2>
+    <div class="service-grid">
+      <div class="service-card">
+        <div class="service-icon">🔥</div>
+        <h3>Heating</h3>
+        <p>Furnace repair, maintenance, and new installations. Stay warm all winter.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">❄️</div>
+        <h3>Cooling</h3>
+        <p>AC repair, tune-ups, and heat pump installations. Beat the Colorado heat.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">🚿</div>
+        <h3>Water Heaters</h3>
+        <p>Tank and tankless water heater repair, replacement, and maintenance.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">💧</div>
+        <h3>Humidifiers</h3>
+        <p>Whole-home humidifier installation and service for Colorado's dry air.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <p>&copy; 2026 ROX Heating & Air. Serving the Denver Metro Area.</p>
+    <p style="margin-top: 8px;">
+      <a href="#">Privacy</a> · <a href="#">Terms</a> · <a href="#">Careers</a>
+    </p>
+  </footer>
+
+  <!-- 
+    ============================================
+    CHAT WIDGET EMBED — This is all you need!
+    
+    To add the chat widget to YOUR website, add this 
+    single script tag before </body>:
+    ============================================
+  -->
+  <script 
+    src="/widget/chat-widget.js" 
+    data-tenant="rox-heating"
+    data-server=""
+    data-color="#E63946"
+    data-secondary="#1D3557">
+  </script>
+
+</body>
+</html>
