@@ -17,62 +17,43 @@ const DEFAULT_TENANT = {
   businessName: 'ROX Heating & Air',
   businessNameShort: 'ROX',
 
-  // Widget appearance
+  // Widget appearance (matched to roxheating.com)
   widget: {
-    primaryColor: '#E63946',      // ROX red
-    secondaryColor: '#1D3557',    // Dark navy
-    accentColor: '#F1FAEE',       // Off-white
-    textColor: '#1D3557',
-    bubbleSize: 64,               // px - chat bubble button size
-    position: 'bottom-right',     // bottom-right | bottom-left
-    offsetX: 24,                  // px from edge
-    offsetY: 24,                  // px from edge
-    borderRadius: 16,             // px for chat window
+    primaryColor: '#F78C26',      // ROX orange
+    secondaryColor: '#1A1A1A',    // Black
+    accentColor: '#FFFFFF',       // White
+    textColor: '#1A1A1A',
+    bubbleSize: 64,
+    position: 'bottom-right',
+    offsetX: 24,
+    offsetY: 24,
+    borderRadius: 16,
     fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
     
-    // Chat window dimensions
-    windowWidth: 400,             // px
-    windowHeight: 600,            // px
-    windowMaxHeight: '80vh',      // responsive cap
+    windowWidth: 400,
+    windowHeight: 600,
+    windowMaxHeight: '80vh',
     
-    // Greeting shown before user sends first message
     welcomeTitle: 'ROX Heating & Air',
-    welcomeSubtitle: 'Hi there! 👋 How can we help you today?',
-    
-    // Placeholder in input field
+    welcomeSubtitle: "Hi there! 👋 How can we help you today?",
     inputPlaceholder: 'Type a message or tap a button...',
     
-    // Powered-by branding (for SaaS)
     showPoweredBy: false,
     poweredByText: 'Powered by ROX AI',
     poweredByUrl: null,
 
-    // Avatar
-    avatarEmoji: '🔧',           // Fallback if no image
-    avatarUrl: null,              // URL to avatar image (overrides emoji)
+    avatarEmoji: '🔧',
+    avatarUrl: null,
   },
 
   // Chat behavior
   behavior: {
-    // Auto-open after delay (ms). Set to 0 or null to disable.
     autoOpenDelay: null,
-    
-    // Show typing indicator (simulated delay for natural feel)
     typingDelayMs: 800,
-    
-    // Max messages before suggesting they call
     maxMessages: 50,
-    
-    // Persist chat across page navigations (uses sessionStorage)
     persistSession: true,
-    
-    // Session timeout (ms) - 30 min
     sessionTimeoutMs: 30 * 60 * 1000,
-    
-    // Show timestamps on messages
     showTimestamps: false,
-    
-    // Sound notification on new message
     soundEnabled: false,
   },
 
@@ -84,15 +65,14 @@ const DEFAULT_TENANT = {
     'I Have an Appointment'
   ],
 
-  // Business info shown in widget header or info panel
+  // Business info
   businessInfo: {
-    phone: '(303) 555-0199',       // Replace with real number
+    phone: '(720) 468-0689',
     hours: 'Mon-Sat: 8am-5pm MST',
     serviceArea: 'Denver Metro Area',
     serviceFee: '$148 service call fee (waived with repair)',
   },
 
-  // API endpoint (where the chat server runs)
   apiBaseUrl: '/api/chat',
 };
 
@@ -101,32 +81,10 @@ const DEFAULT_TENANT = {
 // CONFIG ACCESSOR
 // ============================================
 
-/**
- * Get config for a tenant.
- * 
- * Standalone (ROX): Always returns DEFAULT_TENANT
- * Future SaaS: Look up by tenantId from DB/Redis cache
- * 
- * @param {string} tenantId - Tenant identifier (ignored in standalone mode)
- * @returns {Object} Tenant configuration
- */
 function getConfig(tenantId = null) {
-  // STANDALONE MODE: Always return ROX config
-  // FUTURE SaaS: Replace with DB lookup
-  // Example:
-  //   const tenant = await db.tenants.findById(tenantId);
-  //   return { ...DEFAULT_TENANT, ...tenant.config };
-  
   return { ...DEFAULT_TENANT };
 }
 
-/**
- * Get widget config formatted for the frontend embed script
- * Only includes visual/behavioral settings (no server secrets)
- * 
- * @param {string} tenantId
- * @returns {Object} Client-safe widget config
- */
 function getWidgetConfig(tenantId = null) {
   const config = getConfig(tenantId);
   

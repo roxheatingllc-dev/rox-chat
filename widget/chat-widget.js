@@ -2,43 +2,26 @@
  * ROX Chat Widget - Embeddable Chat Component
  * 
  * Drop this on ANY website with a single script tag:
- *   <script src="https://your-server.com/widget/chat-widget.js" 
- *           data-tenant="rox-heating"
- *           data-server="https://your-server.com"></script>
+ *   <script src="https://rox-chat-production.up.railway.app/widget/chat-widget.js" 
+ *           data-server="https://rox-chat-production.up.railway.app"></script>
  * 
- * Features:
- * - Floating chat bubble (bottom-right)
- * - AI + quick reply buttons (hybrid UX)
- * - Session persistence across page navigations
- * - Responsive & mobile-friendly
- * - Zero dependencies (vanilla JS)
- * - Accessible (keyboard nav, ARIA labels)
- * 
- * MULTI-TENANT: Pass data-tenant attribute to load tenant-specific config.
- * Widget auto-fetches branding from /api/chat/config.
+ * DESIGN: ROX orange (#F78C26), black, and white.
  */
 
 (function() {
   'use strict';
 
-  // ============================================
-  // CONFIGURATION (from script tag attributes)
-  // ============================================
   const scriptTag = document.currentScript || document.querySelector('script[data-tenant]');
   const CONFIG = {
     tenantId: scriptTag?.getAttribute('data-tenant') || 'rox-heating',
     serverUrl: scriptTag?.getAttribute('data-server') || window.location.origin,
     position: scriptTag?.getAttribute('data-position') || 'bottom-right',
-    primaryColor: scriptTag?.getAttribute('data-color') || '#E63946',
-    secondaryColor: scriptTag?.getAttribute('data-secondary') || '#1D3557',
+    primaryColor: scriptTag?.getAttribute('data-color') || '#F78C26',
+    secondaryColor: scriptTag?.getAttribute('data-secondary') || '#1A1A1A',
   };
 
-  // Session storage key (tenant-scoped)
   const SESSION_KEY = `rox_chat_${CONFIG.tenantId}`;
 
-  // ============================================
-  // STATE
-  // ============================================
   let state = {
     isOpen: false,
     sessionId: null,
@@ -47,17 +30,12 @@
     isEnded: false,
   };
 
-
-  // ============================================
-  // STYLES (injected into page)
-  // ============================================
   function injectStyles() {
     if (document.getElementById('rox-chat-styles')) return;
     
     const style = document.createElement('style');
     style.id = 'rox-chat-styles';
     style.textContent = `
-      /* ========== RESET & CONTAINER ========== */
       #rox-chat-widget,
       #rox-chat-widget * {
         box-sizing: border-box;
@@ -67,7 +45,7 @@
         -webkit-font-smoothing: antialiased;
       }
 
-      /* ========== CHAT BUBBLE BUTTON ========== */
+      /* ========== CHAT BUBBLE ========== */
       #rox-chat-bubble {
         position: fixed;
         bottom: 24px;
@@ -78,7 +56,7 @@
         background: ${CONFIG.primaryColor};
         border: none;
         cursor: pointer;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.25), 0 2px 8px rgba(0,0,0,0.15);
+        box-shadow: 0 4px 24px rgba(247, 140, 38, 0.45), 0 2px 8px rgba(0,0,0,0.15);
         z-index: 999998;
         display: flex;
         align-items: center;
@@ -89,7 +67,7 @@
       }
       #rox-chat-bubble:hover {
         transform: scale(1.08);
-        box-shadow: 0 6px 28px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2);
+        box-shadow: 0 6px 32px rgba(247, 140, 38, 0.55), 0 4px 12px rgba(0,0,0,0.2);
       }
       #rox-chat-bubble:active { transform: scale(0.95); }
       #rox-chat-bubble.rox-hidden { 
@@ -99,7 +77,6 @@
       }
       #rox-chat-bubble svg { width: 28px; height: 28px; fill: white; }
 
-      /* Unread badge */
       #rox-chat-badge {
         position: absolute;
         top: -4px;
@@ -132,9 +109,9 @@
         max-width: calc(100vw - 32px);
         height: 600px;
         max-height: calc(100vh - 120px);
-        border-radius: 20px;
+        border-radius: 16px;
         background: #ffffff;
-        box-shadow: 0 12px 60px rgba(0,0,0,0.2), 0 4px 20px rgba(0,0,0,0.1);
+        box-shadow: 0 16px 70px rgba(0,0,0,0.3), 0 4px 24px rgba(0,0,0,0.12);
         z-index: 999999;
         display: flex;
         flex-direction: column;
@@ -159,17 +136,21 @@
         align-items: center;
         gap: 12px;
         flex-shrink: 0;
+        border-bottom: 3px solid ${CONFIG.primaryColor};
       }
       .rox-chat-avatar {
-        width: 42px;
-        height: 42px;
+        width: 44px;
+        height: 44px;
         border-radius: 50%;
-        background: rgba(255,255,255,0.15);
+        background: ${CONFIG.primaryColor};
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 20px;
+        font-size: 14px;
+        font-weight: 800;
+        color: white;
         flex-shrink: 0;
+        letter-spacing: -0.02em;
       }
       .rox-chat-header-info { flex: 1; }
       .rox-chat-header-title {
@@ -179,7 +160,7 @@
       }
       .rox-chat-header-status {
         font-size: 12px;
-        opacity: 0.8;
+        opacity: 0.7;
         display: flex;
         align-items: center;
         gap: 5px;
@@ -194,7 +175,7 @@
         display: inline-block;
       }
       .rox-chat-close {
-        background: rgba(255,255,255,0.1);
+        background: rgba(255,255,255,0.08);
         border: none;
         color: white;
         cursor: pointer;
@@ -206,10 +187,10 @@
         justify-content: center;
         transition: background 0.2s;
       }
-      .rox-chat-close:hover { background: rgba(255,255,255,0.2); }
+      .rox-chat-close:hover { background: rgba(255,255,255,0.15); }
       .rox-chat-close svg { width: 18px; height: 18px; fill: white; }
 
-      /* ========== MESSAGES AREA ========== */
+      /* ========== MESSAGES ========== */
       .rox-chat-messages {
         flex: 1;
         overflow-y: auto;
@@ -218,16 +199,15 @@
         flex-direction: column;
         gap: 12px;
         scroll-behavior: smooth;
-        background: #f8f9fb;
+        background: #f5f5f5;
       }
       .rox-chat-messages::-webkit-scrollbar { width: 5px; }
       .rox-chat-messages::-webkit-scrollbar-track { background: transparent; }
       .rox-chat-messages::-webkit-scrollbar-thumb { 
-        background: #cbd5e1; 
+        background: #c0c0c0; 
         border-radius: 10px; 
       }
 
-      /* Message bubbles */
       .rox-msg {
         max-width: 85%;
         padding: 12px 16px;
@@ -244,18 +224,18 @@
       .rox-msg-bot {
         align-self: flex-start;
         background: white;
-        color: ${CONFIG.secondaryColor};
+        color: #222;
         border-bottom-left-radius: 6px;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        box-shadow: 0 1px 4px rgba(0,0,0,0.08);
       }
       .rox-msg-user {
         align-self: flex-end;
-        background: ${CONFIG.primaryColor};
+        background: ${CONFIG.secondaryColor};
         color: white;
         border-bottom-right-radius: 6px;
       }
 
-      /* Typing indicator */
+      /* Typing */
       .rox-typing {
         align-self: flex-start;
         display: flex;
@@ -264,14 +244,14 @@
         background: white;
         border-radius: 18px;
         border-bottom-left-radius: 6px;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        box-shadow: 0 1px 4px rgba(0,0,0,0.08);
         animation: rox-fadeIn 0.2s ease;
       }
       .rox-typing-dot {
         width: 8px;
         height: 8px;
         border-radius: 50%;
-        background: #94a3b8;
+        background: #999;
         animation: rox-typingBounce 1.4s ease-in-out infinite;
       }
       .rox-typing-dot:nth-child(2) { animation-delay: 0.2s; }
@@ -296,7 +276,7 @@
         border-radius: 20px;
         padding: 8px 16px;
         font-size: 13.5px;
-        font-weight: 500;
+        font-weight: 600;
         cursor: pointer;
         transition: all 0.2s ease;
         white-space: nowrap;
@@ -305,15 +285,15 @@
         background: ${CONFIG.primaryColor};
         color: white;
         transform: translateY(-1px);
-        box-shadow: 0 2px 8px rgba(230, 57, 70, 0.3);
+        box-shadow: 0 3px 12px rgba(247, 140, 38, 0.35);
       }
       .rox-quick-btn:active { transform: scale(0.97); }
 
-      /* ========== INPUT AREA ========== */
+      /* ========== INPUT ========== */
       .rox-chat-input-area {
         padding: 12px 16px 16px;
         background: white;
-        border-top: 1px solid #e8ecf1;
+        border-top: 1px solid #e5e5e5;
         display: flex;
         gap: 10px;
         align-items: flex-end;
@@ -321,7 +301,7 @@
       }
       .rox-chat-input {
         flex: 1;
-        border: 1.5px solid #d1d9e6;
+        border: 1.5px solid #d4d4d4;
         border-radius: 24px;
         padding: 10px 18px;
         font-size: 14.5px;
@@ -331,11 +311,12 @@
         line-height: 1.4;
         transition: border-color 0.2s;
         font-family: inherit;
+        color: #222;
       }
       .rox-chat-input:focus { border-color: ${CONFIG.primaryColor}; }
-      .rox-chat-input::placeholder { color: #9ca3af; }
+      .rox-chat-input::placeholder { color: #999; }
       .rox-chat-input:disabled { 
-        background: #f3f4f6; 
+        background: #f3f3f3; 
         cursor: not-allowed; 
       }
       .rox-chat-send {
@@ -351,10 +332,10 @@
         flex-shrink: 0;
         transition: background 0.2s, transform 0.15s;
       }
-      .rox-chat-send:hover { filter: brightness(1.1); }
+      .rox-chat-send:hover { background: #e07b1a; }
       .rox-chat-send:active { transform: scale(0.92); }
       .rox-chat-send:disabled { 
-        background: #cbd5e1; 
+        background: #ccc; 
         cursor: not-allowed; 
       }
       .rox-chat-send svg { width: 18px; height: 18px; fill: white; }
@@ -382,7 +363,6 @@
         margin: 4px 0;
       }
 
-      /* ========== POWERED BY ========== */
       .rox-powered-by {
         text-align: center;
         padding: 6px;
@@ -391,7 +371,7 @@
         background: white;
       }
 
-      /* ========== MOBILE RESPONSIVE ========== */
+      /* ========== MOBILE ========== */
       @media (max-width: 480px) {
         #rox-chat-window {
           bottom: 0;
@@ -414,10 +394,6 @@
     document.head.appendChild(style);
   }
 
-
-  // ============================================
-  // SVG ICONS
-  // ============================================
   const ICONS = {
     chat: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/></svg>',
     close: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>',
@@ -425,27 +401,19 @@
     minimize: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19 13H5v-2h14v2z"/></svg>',
   };
 
-
-  // ============================================
-  // BUILD DOM
-  // ============================================
   function buildWidget() {
     const container = document.createElement('div');
     container.id = 'rox-chat-widget';
     
     container.innerHTML = `
-      <!-- Chat Bubble Button -->
       <button id="rox-chat-bubble" aria-label="Open chat">
         ${ICONS.chat}
         <span id="rox-chat-badge">1</span>
       </button>
       
-      <!-- Chat Window -->
       <div id="rox-chat-window" role="dialog" aria-label="Chat with ROX Heating & Air">
-        
-        <!-- Header -->
         <div class="rox-chat-header">
-          <div class="rox-chat-avatar">🔧</div>
+          <div class="rox-chat-avatar">ROX</div>
           <div class="rox-chat-header-info">
             <div class="rox-chat-header-title">ROX Heating & Air</div>
             <div class="rox-chat-header-status">Online</div>
@@ -455,10 +423,8 @@
           </button>
         </div>
         
-        <!-- Messages -->
         <div class="rox-chat-messages" id="rox-chat-messages"></div>
         
-        <!-- Input Area -->
         <div class="rox-chat-input-area">
           <input 
             type="text" 
@@ -478,10 +444,6 @@
     document.body.appendChild(container);
   }
 
-
-  // ============================================
-  // DOM REFERENCES
-  // ============================================
   let els = {};
   
   function cacheElements() {
@@ -496,10 +458,6 @@
     };
   }
 
-
-  // ============================================
-  // API CALLS
-  // ============================================
   const api = {
     async startSession() {
       const res = await fetch(`${CONFIG.serverUrl}/api/chat/start`, {
@@ -550,10 +508,6 @@
     },
   };
 
-
-  // ============================================
-  // SESSION PERSISTENCE
-  // ============================================
   function saveSession() {
     try {
       sessionStorage.setItem(SESSION_KEY, JSON.stringify({
@@ -562,22 +516,18 @@
         isEnded: state.isEnded,
         savedAt: Date.now(),
       }));
-    } catch (e) { /* sessionStorage not available */ }
+    } catch (e) {}
   }
 
   function loadSession() {
     try {
       const saved = sessionStorage.getItem(SESSION_KEY);
       if (!saved) return null;
-      
       const data = JSON.parse(saved);
-      
-      // Expire after 30 minutes
       if (Date.now() - data.savedAt > 30 * 60 * 1000) {
         sessionStorage.removeItem(SESSION_KEY);
         return null;
       }
-      
       return data;
     } catch (e) { 
       return null; 
@@ -585,14 +535,9 @@
   }
 
   function clearSession() {
-    try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* ok */ }
+    try { sessionStorage.removeItem(SESSION_KEY); } catch (e) {}
   }
 
-
-  // ============================================
-  // UI RENDERING
-  // ============================================
-  
   function renderMessage(msg) {
     const div = document.createElement('div');
     
@@ -601,12 +546,10 @@
       div.textContent = msg.text;
       els.messages.appendChild(div);
       
-      // Render booking card if present
       if (msg.card && msg.card.type === 'booking_confirmation') {
         renderBookingCard(msg.card);
       }
       
-      // Render quick replies if present
       if (msg.quickReplies && msg.quickReplies.length > 0 && !msg._repliesUsed) {
         renderQuickReplies(msg.quickReplies);
       }
@@ -620,7 +563,6 @@
   }
 
   function renderQuickReplies(replies) {
-    // Remove any existing quick replies first
     removeQuickReplies();
     
     const container = document.createElement('div');
@@ -692,11 +634,6 @@
     els.sendBtn.disabled = !enabled;
   }
 
-
-  // ============================================
-  // CHAT ACTIONS
-  // ============================================
-
   async function openChat() {
     state.isOpen = true;
     els.window.classList.add('rox-open');
@@ -704,7 +641,6 @@
     els.badge.style.display = 'none';
     els.input.focus();
     
-    // Start session if needed
     if (!state.sessionId && !state.isEnded) {
       await startNewSession();
     }
@@ -747,7 +683,7 @@
       
       const errorMsg = {
         type: 'bot',
-        text: "Sorry, I'm having trouble connecting. Please try again in a moment or call us directly.",
+        text: "Sorry, I'm having trouble connecting. Please try again in a moment or call us at (720) 468-0689.",
       };
       state.messages.push(errorMsg);
       renderMessage(errorMsg);
@@ -758,25 +694,19 @@
   async function sendMessage(text) {
     if (!text.trim() || state.isEnded) return;
     
-    // Remove quick replies when user sends a message
     removeQuickReplies();
     
-    // Render user message
     const userMsg = { type: 'user', text: text.trim() };
     state.messages.push(userMsg);
     renderMessage(userMsg);
     
-    // Clear input
     els.input.value = '';
     setInputEnabled(false);
-    
-    // Show typing indicator
     showTyping();
     
     try {
       const data = await api.sendMessage(state.sessionId, text.trim());
       
-      // Small delay for natural feel
       await new Promise(r => setTimeout(r, 400));
       
       hideTyping();
@@ -792,7 +722,6 @@
         state.messages.push(botMsg);
         renderMessage(botMsg);
         
-        // Check if chat ended
         if (data.message.endChat) {
           state.isEnded = true;
           setInputEnabled(false);
@@ -803,7 +732,6 @@
       }
       
       if (data.shouldRestart) {
-        // Session expired - restart
         state.sessionId = null;
         state.messages = [];
         els.messages.innerHTML = '';
@@ -821,7 +749,7 @@
       
       const errorMsg = {
         type: 'bot',
-        text: "I'm having trouble right now. Please try again, or call us for immediate help.",
+        text: "I'm having trouble right now. Please try again, or call us at (720) 468-0689 for immediate help.",
       };
       state.messages.push(errorMsg);
       renderMessage(errorMsg);
@@ -833,22 +761,15 @@
     sendMessage(value);
   }
 
-
-  // ============================================
-  // EVENT LISTENERS
-  // ============================================
   function attachListeners() {
-    // Toggle chat
     els.bubble.addEventListener('click', openChat);
     els.closeBtn.addEventListener('click', closeChat);
     
-    // Send message
     els.sendBtn.addEventListener('click', () => {
       const text = els.input.value;
       if (text.trim()) sendMessage(text);
     });
     
-    // Enter to send (Shift+Enter for newline)
     els.input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -857,16 +778,11 @@
       }
     });
     
-    // Close on Escape
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && state.isOpen) closeChat();
     });
   }
 
-
-  // ============================================
-  // RESTORE PREVIOUS SESSION
-  // ============================================
   function restoreSession() {
     const saved = loadSession();
     if (!saved || saved.isEnded) return false;
@@ -875,11 +791,9 @@
     state.messages = saved.messages || [];
     state.isEnded = saved.isEnded || false;
     
-    // Re-render all messages (without quick replies except last)
     state.messages.forEach((msg, i) => {
       const isLast = i === state.messages.length - 1;
       if (!isLast) {
-        // Mark older messages so quick replies aren't re-rendered
         msg._repliesUsed = true;
       }
       renderMessage(msg);
@@ -888,20 +802,14 @@
     return true;
   }
 
-
-  // ============================================
-  // INITIALIZATION
-  // ============================================
   function init() {
     injectStyles();
     buildWidget();
     cacheElements();
     attachListeners();
     
-    // Try to restore previous session
     const restored = restoreSession();
     
-    // Show unread badge if widget hasn't been opened yet on this page
     if (!restored && !state.isOpen) {
       setTimeout(() => {
         els.badge.style.display = 'flex';
@@ -911,7 +819,6 @@
     console.log('[ROX Chat] Widget initialized for tenant:', CONFIG.tenantId);
   }
 
-  // Start when DOM is ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
