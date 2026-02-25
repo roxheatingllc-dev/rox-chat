@@ -1,112 +1,104 @@
 /**
- * ROX Chat Server
+ * ROX Chat Server v3.0
+ * Express server for the embeddable chat widget.
  * 
- * Express server that powers the chat widget.
- * Can run standalone or be mounted into your existing server.js.
- * 
- * STANDALONE: node chat-server.js (runs on PORT)
- * INTEGRATED: Mount chatRoutes in your existing Express app
- * 
- * Usage in existing server.js:
- *   const chatRoutes = require('./rox-chat/routes/chat-routes');
- *   app.use('/api/chat', chatRoutes);
- *   app.use(express.static('./rox-chat/public'));
+ * Serves:
+ *   - Widget JS file (for embedding on any website)
+ *   - Chat API routes (start session, send message, health check)
+ *   - Demo page for testing
  */
 
 require('dotenv').config();
-
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const chatConfig = require('./config/chat-config');
 const chatRoutes = require('./routes/chat-routes');
 
 const app = express();
 const PORT = process.env.CHAT_PORT || process.env.PORT || 3001;
 
+// ========================================
+// CORS - Allow widget to be embedded anywhere
+// ========================================
+const allowedOrigins = chatConfig.cors.allowedOrigins;
 
-// ============================================
-// MIDDLEWARE
-// ============================================
-
-// CORS - allow widget to call from any domain
-// MULTI-TENANT: In production, restrict to tenant's registered domains
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS 
-    ? process.env.ALLOWED_ORIGINS.split(',') 
-    : '*',   // Allow all in development
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    // Allow all if wildcard is set
+    if (allowedOrigins.includes('*')) return callback(null, true);
+    // Check allowed list
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error('Not allowed by CORS'));
+  },
   methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type', 'X-Tenant-ID'],
+  allowedHeaders: ['Content-Type']
 }));
 
-// Parse JSON bodies
-app.use(express.json({ limit: '10kb' }));  // Small limit - chat messages are short
+// ========================================
+// MIDDLEWARE
+// ========================================
+app.use(express.json({ limit: '16kb' }));
 
-// Request logging (development)
-if (process.env.NODE_ENV !== 'production') {
-  app.use((req, res, next) => {
-    if (req.path.startsWith('/api/')) {
-      console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
-    }
-    next();
-  });
-}
-
-
-// ============================================
-// ROUTES
-// ============================================
-
-// Chat API
-app.use('/api/chat', chatRoutes);
-
-// Serve widget files (JS, CSS)
+// ========================================
+// STATIC FILES
+// ========================================
+// Serve widget JS with proper headers for embedding
 app.use('/widget', express.static(path.join(__dirname, 'widget'), {
-  maxAge: process.env.NODE_ENV === 'production' ? '1h' : '0',
+  maxAge: '5m',  // Short cache so updates deploy fast
   setHeaders: (res, filePath) => {
-    // Set proper MIME types
     if (filePath.endsWith('.js')) {
       res.setHeader('Content-Type', 'application/javascript');
-    } else if (filePath.endsWith('.css')) {
-      res.setHeader('Content-Type', 'text/css');
+      res.setHeader('Access-Control-Allow-Origin', '*');
     }
-  },
+  }
 }));
 
 // Serve demo page
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Root endpoint
+// ========================================
+// API ROUTES
+// ========================================
+app.use('/api/chat', chatRoutes);
+
+// ========================================
+// ROOT - Demo page
+// ========================================
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'demo.html'));
 });
 
-
-// ============================================
-// ERROR HANDLING
-// ============================================
-app.use((err, req, res, next) => {
-  console.error('[Server] Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
+// ========================================
+// CONFIG ENDPOINT (for multi-tenant widget config)
+// ========================================
+app.get('/api/config/:tenantId', (req, res) => {
+  // In multi-tenant SaaS, this would pull from a database
+  // For now, return the default config
+  res.json({
+    tenantId: req.params.tenantId,
+    company: chatConfig.company,
+    branding: chatConfig.branding
+  });
 });
 
-
-// ============================================
+// ========================================
 // START SERVER
-// ============================================
-app.listen(PORT, () => {
-  console.log('');
-  console.log('╔═══════════════════════════════════════════════════════╗');
-  console.log('║   ROX CHAT - Website Chat Widget Server               ║');
-  console.log('╠═══════════════════════════════════════════════════════╣');
-  console.log(`║   🌐 Server:  http://localhost:${PORT}                    ║`);
-  console.log(`║   💬 Widget:  http://localhost:${PORT}/widget/chat-widget.js ║`);
-  console.log(`║   🎨 Demo:    http://localhost:${PORT}                    ║`);
-  console.log(`║   📡 API:     http://localhost:${PORT}/api/chat/health    ║`);
-  console.log('╠═══════════════════════════════════════════════════════╣');
-  console.log(`║   Engine:  ${process.env.ROX_ENGINE_PATH || '../rox-ai-answering'}  ║`);
-  console.log(`║   Mode:    ${process.env.NODE_ENV || 'development'}                          ║`);
-  console.log('╚═══════════════════════════════════════════════════════╝');
-  console.log('');
-});
+// ========================================
+if (require.main === module) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log('╔══════════════════════════════════════════════╗');
+    console.log('║       ROX CHAT - EMBEDDABLE WIDGET SERVER    ║');
+    console.log('║       Version: 3.0.0                         ║');
+    console.log('╚══════════════════════════════════════════════╝');
+    console.log(`\n🚀 Server running on port ${PORT}`);
+    console.log(`🔗 Engine: ${process.env.ENGINE_API_URL || 'http://localhost:3000/api/engine'}`);
+    console.log(`🌐 Demo: http://localhost:${PORT}`);
+    console.log(`📦 Widget: http://localhost:${PORT}/widget/chat-widget.js`);
+    console.log();
+  });
+}
 
 module.exports = app;

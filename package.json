@@ -1,22 +1,18 @@
 {
   "name": "rox-chat",
-  "version": "1.0.0",
-  "description": "ROX Heating & Air - Website Chat Widget with AI Conversation Engine",
+  "version": "3.0.0",
+  "description": "ROX Heating & Air - Embeddable AI Chat Widget",
   "main": "chat-server.js",
   "scripts": {
     "start": "node chat-server.js",
     "dev": "node chat-server.js",
     "test": "node tests/test-chat-flow.js"
   },
-  "keywords": ["chatbot", "hvac", "customer-service", "ai"],
-  "author": "ROX Heating & Air",
-  "license": "UNLICENSED",
-  "private": true,
   "dependencies": {
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "express": "^4.18.2",
-    "uuid": "^9.0.0"
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "uuid": "^11.1.0"
   },
   "engines": {
     "node": ">=18.0.0"

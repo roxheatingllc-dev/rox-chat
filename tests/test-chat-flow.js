@@ -1,83 +1,67 @@
 /**
- * Test Chat Flow
- * Simulates the chat widget's API calls to verify the full flow.
- * Run: node tests/test-chat-flow.js
+ * Basic Chat Flow Test
+ * Tests the chat API endpoints locally.
+ * 
+ * Usage: npm test (requires server running on localhost:3001)
  */
 
-require('dotenv').config();
-const chatAdapter = require('../services/chat-adapter');
-const sessionStore = require('../services/chat-session-store');
+const BASE_URL = process.env.TEST_URL || 'http://localhost:3001';
 
-async function testChatFlow() {
-  console.log('╔═══════════════════════════════════════════════════════╗');
-  console.log('║   ROX CHAT - CONVERSATION FLOW TEST                   ║');
-  console.log('╚═══════════════════════════════════════════════════════╝\n');
+async function test() {
+  console.log('🧪 Testing ROX Chat API...\n');
 
-  const tenantId = 'rox-heating';
-
-  // 1. Create session
-  console.log('━━━ Step 1: Start Chat Session ━━━');
-  const session = await sessionStore.create(tenantId);
-  console.log(`  Session ID: ${session.sessionId}`);
-  console.log(`  Tenant: ${session.tenantId}`);
-
-  // 2. Start chat
-  console.log('\n━━━ Step 2: Start Chat (Welcome Message) ━━━');
-  const welcome = await chatAdapter.startChat(session.sessionId, tenantId);
-  console.log(`  🤖 Bot: "${welcome.text}"`);
-  console.log(`  State: ${welcome.state}`);
-  console.log(`  Quick Replies: ${welcome.quickReplies?.map(r => r.label).join(', ') || 'none'}`);
-
-  // 3. Simulate user selecting "Repair"
-  console.log('\n━━━ Step 3: User Selects "Repair" ━━━');
-  const repair = await chatAdapter.processMessage(session.sessionId, 'I need a repair', tenantId);
-  console.log(`  🤖 Bot: "${repair.text}"`);
-  console.log(`  State: ${repair.state}`);
-  console.log(`  Quick Replies: ${repair.quickReplies?.map(r => r.label).join(', ') || 'none'}`);
-
-  // 4. Provide phone number
-  console.log('\n━━━ Step 4: User Provides Phone ━━━');
-  const phone = await chatAdapter.processMessage(session.sessionId, '303-555-1234', tenantId);
-  console.log(`  🤖 Bot: "${phone.text}"`);
-  console.log(`  State: ${phone.state}`);
-  console.log(`  Quick Replies: ${phone.quickReplies?.map(r => r.label).join(', ') || 'none'}`);
-
-  // 5. Continue conversation...
-  const steps = [
-    { input: 'My furnace is not heating', desc: 'Describe issue' },
-    { input: '8 years', desc: 'System age' },
-    { input: 'No', desc: 'Not ROX installed' },
-    { input: 'As soon as possible', desc: 'Time preference' },
-  ];
-
-  for (const step of steps) {
-    console.log(`\n━━━ User: "${step.input}" (${step.desc}) ━━━`);
-    const response = await chatAdapter.processMessage(session.sessionId, step.input, tenantId);
-    console.log(`  🤖 Bot: "${response.text}"`);
-    console.log(`  State: ${response.state}`);
-    console.log(`  Quick Replies: ${response.quickReplies?.map(r => r.label).join(', ') || 'none'}`);
-    
-    if (response.endChat) {
-      console.log('  ✅ Chat ended');
-      break;
-    }
+  // Test 1: Health check
+  console.log('1. Health check...');
+  try {
+    const res = await fetch(`${BASE_URL}/api/chat/health`);
+    const data = await res.json();
+    console.log(`   Status: ${data.status}`);
+    console.log(`   Engine: ${data.engine}`);
+    console.log(`   ✅ Health check passed\n`);
+  } catch (err) {
+    console.log(`   ❌ Health check failed: ${err.message}\n`);
   }
 
-  // Session stats
-  console.log('\n━━━ Session Stats ━━━');
-  const activeCount = await sessionStore.getActiveCount(tenantId);
-  console.log(`  Active sessions: ${activeCount}`);
-  console.log(`  Active chat managers: ${chatAdapter.getActiveChatCount()}`);
+  // Test 2: Start session
+  console.log('2. Start session...');
+  let sessionId = null;
+  try {
+    const res = await fetch(`${BASE_URL}/api/chat/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenantId: 'rox-heating' })
+    });
+    const data = await res.json();
+    sessionId = data.sessionId;
+    console.log(`   Session ID: ${sessionId}`);
+    console.log(`   Greeting: ${data.greeting || '(none - using welcome card)'}`);
+    console.log(`   ✅ Session started\n`);
+  } catch (err) {
+    console.log(`   ❌ Start session failed: ${err.message}\n`);
+    return;
+  }
 
-  // Cleanup
-  chatAdapter.endChat(session.sessionId);
-  await sessionStore.destroy(tenantId, session.sessionId);
-  sessionStore.stopCleanup();
+  // Test 3: Send a message
+  console.log('3. Send message: "I need to schedule a repair"...');
+  try {
+    const res = await fetch(`${BASE_URL}/api/chat/message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId,
+        message: 'I need to schedule a repair',
+        tenantId: 'rox-heating'
+      })
+    });
+    const data = await res.json();
+    console.log(`   Response: ${data.message}`);
+    console.log(`   Quick replies: ${data.quickReplies?.length || 0}`);
+    console.log(`   ✅ Message sent\n`);
+  } catch (err) {
+    console.log(`   ❌ Send message failed: ${err.message}\n`);
+  }
 
-  console.log('\n✅ Test complete!');
+  console.log('🏁 Tests complete.');
 }
 
-testChatFlow().catch(err => {
-  console.error('Test failed:', err);
-  process.exit(1);
-});
+test().catch(console.error);
