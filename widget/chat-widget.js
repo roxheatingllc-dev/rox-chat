@@ -1,9 +1,15 @@
 /**
  * ROX Chat Widget v2 - Embeddable Chat Component
  * 
- * Drop this on ANY website with a single script tag:
+ * METHOD 1 - Simple (if your site doesn't bundle JS):
  *   <script src="https://rox-chat-production.up.railway.app/widget/chat-widget.js" 
  *           data-server="https://rox-chat-production.up.railway.app"></script>
+ * 
+ * METHOD 2 - For sites with JS bundlers (WordPress, SiteGround, etc.):
+ *   <script>
+ *     window.ROX_CHAT_CONFIG = { serverUrl: "https://rox-chat-production.up.railway.app" };
+ *   </script>
+ *   <script src="https://rox-chat-production.up.railway.app/widget/chat-widget.js"></script>
  * 
  * DESIGN: Bold, dark theme matching roxheating.com - orange accents, professional feel.
  */
@@ -11,12 +17,14 @@
 (function() {
   'use strict';
 
-  const scriptTag = document.currentScript || document.querySelector('script[data-tenant]');
+  // Read config from: 1) window.ROX_CHAT_CONFIG (for bundled sites), 2) script tag attributes, 3) defaults
+  const _wc = window.ROX_CHAT_CONFIG || {};
+  const scriptTag = document.currentScript || document.querySelector('script[data-server]') || document.querySelector('script[data-tenant]');
   const CONFIG = {
-    tenantId: scriptTag?.getAttribute('data-tenant') || 'rox-heating',
-    serverUrl: scriptTag?.getAttribute('data-server') || window.location.origin,
-    primaryColor: scriptTag?.getAttribute('data-color') || '#F78C26',
-    secondaryColor: scriptTag?.getAttribute('data-secondary') || '#1A1A1A',
+    tenantId: _wc.tenantId || scriptTag?.getAttribute('data-tenant') || 'rox-heating',
+    serverUrl: _wc.serverUrl || scriptTag?.getAttribute('data-server') || window.location.origin,
+    primaryColor: _wc.primaryColor || scriptTag?.getAttribute('data-color') || '#F78C26',
+    secondaryColor: _wc.secondaryColor || scriptTag?.getAttribute('data-secondary') || '#1A1A1A',
   };
 
   const SESSION_KEY = `rox_chat_${CONFIG.tenantId}`;
