@@ -89,12 +89,17 @@
         align-items: center;
         justify-content: center;
         z-index: 999998;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        box-shadow: 0 4px 20px rgba(247,140,38,0.45), 0 2px 8px rgba(0,0,0,0.15);
         transition: transform 0.2s ease, box-shadow 0.2s ease;
+        animation: rox-bubble-glow 3s ease-in-out infinite;
       }
       #rox-chat-bubble:hover {
-        transform: scale(1.05);
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+        transform: scale(1.08);
+        box-shadow: 0 6px 28px rgba(247,140,38,0.55), 0 3px 12px rgba(0,0,0,0.2);
+      }
+      @keyframes rox-bubble-glow {
+        0%, 100% { box-shadow: 0 4px 20px rgba(247,140,38,0.45), 0 2px 8px rgba(0,0,0,0.15); }
+        50% { box-shadow: 0 4px 30px rgba(247,140,38,0.65), 0 2px 12px rgba(0,0,0,0.2); }
       }
       #rox-chat-bubble svg {
         width: 26px;
@@ -196,6 +201,60 @@
       .rox-chat-messages::-webkit-scrollbar { width: 4px; }
       .rox-chat-messages::-webkit-scrollbar-track { background: transparent; }
       .rox-chat-messages::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+
+      /* ---- WELCOME CARD ---- */
+      .rox-welcome-card {
+        background: #fff;
+        border-radius: 14px;
+        padding: 20px 16px;
+        margin-bottom: 12px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      }
+      .rox-welcome-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #1a1a1a;
+        margin-bottom: 4px;
+      }
+      .rox-welcome-subtitle {
+        font-size: 13px;
+        color: #888;
+        margin-bottom: 16px;
+      }
+      .rox-welcome-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .rox-welcome-btn {
+        background: #fff;
+        border: 1px solid #e5e5e5;
+        border-radius: 10px;
+        padding: 12px 10px;
+        cursor: pointer;
+        text-align: left;
+        transition: all 0.15s ease;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .rox-welcome-btn:hover {
+        border-color: ${CONFIG.primaryColor};
+        background: rgba(247,140,38,0.03);
+      }
+      .rox-welcome-btn-icon {
+        font-size: 20px;
+        line-height: 1;
+      }
+      .rox-welcome-btn-label {
+        font-size: 13px;
+        font-weight: 600;
+        color: #1a1a1a;
+      }
+      .rox-welcome-btn-desc {
+        font-size: 11px;
+        color: #999;
+      }
 
       /* ---- MESSAGE BUBBLES ---- */
       .rox-message {
@@ -457,6 +516,54 @@
   }
 
   // ========================================
+  // WELCOME CARD
+  // ========================================
+  function showWelcomeCard() {
+    const messagesEl = document.getElementById('rox-messages');
+    if (!messagesEl) return;
+
+    const card = document.createElement('div');
+    card.className = 'rox-welcome-card';
+    card.innerHTML = `
+      <div class="rox-welcome-title">Hi there! 👋</div>
+      <div class="rox-welcome-subtitle">How can we help you today?</div>
+      <div class="rox-welcome-actions">
+        <button class="rox-welcome-btn" data-msg="I need to schedule a repair">
+          <span class="rox-welcome-btn-icon">🔧</span>
+          <span class="rox-welcome-btn-label">Repair Service</span>
+          <span class="rox-welcome-btn-desc">Fix a broken system</span>
+        </button>
+        <button class="rox-welcome-btn" data-msg="I'd like an estimate for a new system">
+          <span class="rox-welcome-btn-icon">📊</span>
+          <span class="rox-welcome-btn-label">Free Estimate</span>
+          <span class="rox-welcome-btn-desc">New installation</span>
+        </button>
+        <button class="rox-welcome-btn" data-msg="I need to schedule maintenance">
+          <span class="rox-welcome-btn-icon">🛠️</span>
+          <span class="rox-welcome-btn-label">Maintenance</span>
+          <span class="rox-welcome-btn-desc">Tune-up or check-up</span>
+        </button>
+        <button class="rox-welcome-btn" data-msg="I have a question about my appointment">
+          <span class="rox-welcome-btn-icon">📅</span>
+          <span class="rox-welcome-btn-label">My Appointment</span>
+          <span class="rox-welcome-btn-desc">Reschedule or check</span>
+        </button>
+      </div>
+    `;
+    messagesEl.appendChild(card);
+
+    card.querySelectorAll('.rox-welcome-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const msg = btn.getAttribute('data-msg');
+        if (msg) {
+          card.remove();
+          sendMessage(msg);
+        }
+      });
+    });
+  }
+
+  // ========================================
   // EVENTS
   // ========================================
   function bindEvents() {
@@ -520,17 +627,13 @@
       const data = await res.json();
       sessionId = data.sessionId;
 
-      // Show greeting with initial quick replies
-      const greeting = data.greeting || "Hi there! How can we help you today?";
-      const quickReplies = data.quickReplies && data.quickReplies.length > 0
-        ? data.quickReplies
-        : [
-            { label: '🔧 Repair', value: 'I need to schedule a repair' },
-            { label: '📊 Estimate', value: "I'd like an estimate for a new system" },
-            { label: '🛠️ Maintenance', value: 'I need to schedule maintenance' },
-            { label: '📅 My Appointment', value: 'I have a question about my appointment' }
-          ];
-      addBotMessage(greeting, quickReplies);
+      // Show welcome card with 4 service buttons
+      showWelcomeCard();
+
+      // Also show engine greeting if present
+      if (data.greeting) {
+        addBotMessage(data.greeting, data.quickReplies || []);
+      }
     } catch (err) {
       console.error('[ROX Chat] Failed to start session:', err);
       addBotMessage(`Sorry, I'm having trouble connecting. Please try again in a moment or call us directly at ${CONFIG.phone}.`);
