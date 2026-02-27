@@ -6,7 +6,7 @@
   "colors": {
     "primary": "#F78C26",
     "primaryHover": "#E07520",
-    "headerBg": "#1A1A1A",
+    "headerBg": "#ff000",
     "headerText": "#FFFFFF",
     "headerStatusText": "rgba(255,255,255,0.6)",
     "statusDot": "#4ADE80",
