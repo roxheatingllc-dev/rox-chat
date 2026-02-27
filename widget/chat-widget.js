@@ -273,45 +273,50 @@
 
       /* ---- WELCOME CARD ---- */
       .rox-welcome-card {
-        background: ${C.welcomeCardBg};
+        background: ${C.chatBg};
         border-radius: 14px;
-        padding: 20px 16px;
+        padding: 24px 20px;
         margin-bottom: 12px;
-        box-shadow: 0 1px 3px ${C.welcomeCardShadow};
       }
       .rox-welcome-title {
-        font-size: 16px;
-        font-weight: 600;
+        font-size: 18px;
+        font-weight: 700;
         color: ${C.welcomeTitleText};
         margin-bottom: 4px;
+        text-align: center;
       }
       .rox-welcome-subtitle {
-        font-size: 13px;
+        font-size: 14px;
         color: ${C.welcomeSubtitleText};
-        margin-bottom: 16px;
+        margin-bottom: 20px;
+        text-align: center;
       }
       .rox-welcome-actions {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 8px;
+        gap: 10px;
       }
       .rox-welcome-btn {
         background: ${C.welcomeBtnBg};
-        border: 1px solid ${C.welcomeBtnBorder};
-        border-radius: 10px;
-        padding: 12px 10px;
+        border: 1.5px solid ${C.welcomeBtnBorder};
+        border-radius: 12px;
+        padding: 14px 12px;
         cursor: pointer;
-        text-align: left;
-        transition: all 0.15s ease;
+        text-align: center;
+        transition: all 0.2s ease;
         display: flex;
         flex-direction: column;
+        align-items: center;
         gap: 4px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.06);
       }
       .rox-welcome-btn:hover {
         border-color: ${C.welcomeBtnHoverBorder};
         background: ${C.welcomeBtnHoverBg};
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        transform: translateY(-1px);
       }
-      .rox-welcome-btn-icon { font-size: 20px; line-height: 1; }
+      .rox-welcome-btn-icon { font-size: 22px; line-height: 1; margin-bottom: 2px; }
       .rox-welcome-btn-label { font-size: 13px; font-weight: 600; color: ${C.welcomeBtnLabelText}; }
       .rox-welcome-btn-desc { font-size: 11px; color: ${C.welcomeBtnDescText}; }
 
