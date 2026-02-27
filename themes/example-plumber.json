@@ -1,0 +1,105 @@
+{
+  "id": "example-plumber",
+  "name": "Example Plumbing Co",
+  "description": "Blue professional theme — example for plumbing businesses",
+
+  "colors": {
+    "primary": "#2563EB",
+    "primaryHover": "#1D4ED8",
+    "headerBg": "#1E3A5F",
+    "headerText": "#FFFFFF",
+    "headerStatusText": "rgba(255,255,255,0.6)",
+    "statusDot": "#4ADE80",
+    "bubbleBg": "#2563EB",
+    "bubbleGlow": "rgba(37,99,235,0.4)",
+    "bubbleGlowHover": "rgba(37,99,235,0.55)",
+    "chatBg": "#f0f4f8",
+    "botBubbleBg": "#FFFFFF",
+    "botBubbleText": "#1a1a1a",
+    "botBubbleShadow": "rgba(0,0,0,0.06)",
+    "userBubbleBg": "#2563EB",
+    "userBubbleText": "#FFFFFF",
+    "inputBg": "#FFFFFF",
+    "inputBorder": "#d1d5db",
+    "inputFocusBorder": "#2563EB",
+    "inputText": "#1a1a1a",
+    "inputPlaceholder": "#9ca3af",
+    "sendBtnBg": "#2563EB",
+    "sendBtnText": "#FFFFFF",
+    "quickReplyBg": "#FFFFFF",
+    "quickReplyBorder": "#2563EB",
+    "quickReplyText": "#2563EB",
+    "quickReplyHoverBg": "#2563EB",
+    "quickReplyHoverText": "#FFFFFF",
+    "welcomeCardBg": "#FFFFFF",
+    "welcomeCardShadow": "rgba(0,0,0,0.08)",
+    "welcomeTitleText": "#1a1a1a",
+    "welcomeSubtitleText": "#6b7280",
+    "welcomeBtnBg": "#FFFFFF",
+    "welcomeBtnBorder": "#e5e7eb",
+    "welcomeBtnHoverBorder": "#2563EB",
+    "welcomeBtnHoverBg": "rgba(37,99,235,0.03)",
+    "welcomeBtnLabelText": "#1a1a1a",
+    "welcomeBtnDescText": "#9ca3af",
+    "bookingCardBg": "#FFFFFF",
+    "bookingCardBorder": "#e5e7eb",
+    "bookingIconColor": "#2563EB",
+    "poweredByText": "#bbbbbb",
+    "scrollbarThumb": "#cccccc"
+  },
+
+  "bubble": {
+    "size": 60,
+    "iconSize": 26,
+    "position": "bottom-right",
+    "bottomOffset": 24,
+    "rightOffset": 24,
+    "glowEnabled": true,
+    "glowDuration": "3s",
+    "borderRadius": "50%"
+  },
+
+  "window": {
+    "width": 380,
+    "height": 550,
+    "borderRadius": 16,
+    "bottomOffset": 100
+  },
+
+  "header": {
+    "avatar": "🔧",
+    "avatarType": "emoji",
+    "companyName": "Example Plumbing Co",
+    "statusText": "Online",
+    "accentBarHeight": 3,
+    "accentBarColor": "#2563EB"
+  },
+
+  "messages": {
+    "botBubbleRadius": "16px",
+    "botBubbleCorner": "4px",
+    "userBubbleRadius": "16px",
+    "userBubbleCorner": "4px",
+    "fontSize": 14,
+    "lineHeight": 1.45
+  },
+
+  "quickReplies": {
+    "borderRadius": 18,
+    "fontSize": 13,
+    "fontWeight": 500,
+    "padding": "7px 14px"
+  },
+
+  "input": {
+    "borderRadius": 20,
+    "fontSize": 14,
+    "sendBtnSize": 38,
+    "sendBtnRadius": "50%"
+  },
+
+  "font": {
+    "family": "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif",
+    "importUrl": null
+  }
+}

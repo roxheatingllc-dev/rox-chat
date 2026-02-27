@@ -1,0 +1,105 @@
+{
+  "id": "rox-default",
+  "name": "ROX Heating & Air",
+  "description": "Bold orange and black — ROX brand identity",
+
+  "colors": {
+    "primary": "#F78C26",
+    "primaryHover": "#E07520",
+    "headerBg": "#1A1A1A",
+    "headerText": "#FFFFFF",
+    "headerStatusText": "rgba(255,255,255,0.6)",
+    "statusDot": "#4ADE80",
+    "bubbleBg": "#F78C26",
+    "bubbleGlow": "rgba(247,140,38,0.45)",
+    "bubbleGlowHover": "rgba(247,140,38,0.55)",
+    "chatBg": "#f7f7f8",
+    "botBubbleBg": "#FFFFFF",
+    "botBubbleText": "#1a1a1a",
+    "botBubbleShadow": "rgba(0,0,0,0.06)",
+    "userBubbleBg": "#1A1A1A",
+    "userBubbleText": "#FFFFFF",
+    "inputBg": "#FFFFFF",
+    "inputBorder": "#dddddd",
+    "inputFocusBorder": "#F78C26",
+    "inputText": "#1a1a1a",
+    "inputPlaceholder": "#aaaaaa",
+    "sendBtnBg": "#F78C26",
+    "sendBtnText": "#FFFFFF",
+    "quickReplyBg": "#FFFFFF",
+    "quickReplyBorder": "#F78C26",
+    "quickReplyText": "#F78C26",
+    "quickReplyHoverBg": "#F78C26",
+    "quickReplyHoverText": "#FFFFFF",
+    "welcomeCardBg": "#FFFFFF",
+    "welcomeCardShadow": "rgba(0,0,0,0.08)",
+    "welcomeTitleText": "#1a1a1a",
+    "welcomeSubtitleText": "#888888",
+    "welcomeBtnBg": "#FFFFFF",
+    "welcomeBtnBorder": "#e5e5e5",
+    "welcomeBtnHoverBorder": "#F78C26",
+    "welcomeBtnHoverBg": "rgba(247,140,38,0.03)",
+    "welcomeBtnLabelText": "#1a1a1a",
+    "welcomeBtnDescText": "#999999",
+    "bookingCardBg": "#FFFFFF",
+    "bookingCardBorder": "#e5e5e5",
+    "bookingIconColor": "#F78C26",
+    "poweredByText": "#bbbbbb",
+    "scrollbarThumb": "#cccccc"
+  },
+
+  "bubble": {
+    "size": 60,
+    "iconSize": 26,
+    "position": "bottom-right",
+    "bottomOffset": 24,
+    "rightOffset": 24,
+    "glowEnabled": true,
+    "glowDuration": "3s",
+    "borderRadius": "50%"
+  },
+
+  "window": {
+    "width": 380,
+    "height": 550,
+    "borderRadius": 16,
+    "bottomOffset": 100
+  },
+
+  "header": {
+    "avatar": "🔧",
+    "avatarType": "emoji",
+    "companyName": "ROX Heating & Air",
+    "statusText": "Online",
+    "accentBarHeight": 3,
+    "accentBarColor": "#F78C26"
+  },
+
+  "messages": {
+    "botBubbleRadius": "16px",
+    "botBubbleCorner": "4px",
+    "userBubbleRadius": "16px",
+    "userBubbleCorner": "4px",
+    "fontSize": 14,
+    "lineHeight": 1.45
+  },
+
+  "quickReplies": {
+    "borderRadius": 18,
+    "fontSize": 13,
+    "fontWeight": 500,
+    "padding": "7px 14px"
+  },
+
+  "input": {
+    "borderRadius": 20,
+    "fontSize": 14,
+    "sendBtnSize": 38,
+    "sendBtnRadius": "50%"
+  },
+
+  "font": {
+    "family": "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif",
+    "importUrl": null
+  }
+}

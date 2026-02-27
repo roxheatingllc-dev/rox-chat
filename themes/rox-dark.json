@@ -1,0 +1,105 @@
+{
+  "id": "rox-dark",
+  "name": "ROX Dark Mode",
+  "description": "Dark variant of the ROX brand theme",
+
+  "colors": {
+    "primary": "#F78C26",
+    "primaryHover": "#FFA54F",
+    "headerBg": "#111111",
+    "headerText": "#FFFFFF",
+    "headerStatusText": "rgba(255,255,255,0.5)",
+    "statusDot": "#4ADE80",
+    "bubbleBg": "#F78C26",
+    "bubbleGlow": "rgba(247,140,38,0.45)",
+    "bubbleGlowHover": "rgba(247,140,38,0.55)",
+    "chatBg": "#1a1a1a",
+    "botBubbleBg": "#2a2a2a",
+    "botBubbleText": "#e5e5e5",
+    "botBubbleShadow": "rgba(0,0,0,0.2)",
+    "userBubbleBg": "#F78C26",
+    "userBubbleText": "#FFFFFF",
+    "inputBg": "#2a2a2a",
+    "inputBorder": "#3a3a3a",
+    "inputFocusBorder": "#F78C26",
+    "inputText": "#e5e5e5",
+    "inputPlaceholder": "#666666",
+    "sendBtnBg": "#F78C26",
+    "sendBtnText": "#FFFFFF",
+    "quickReplyBg": "#2a2a2a",
+    "quickReplyBorder": "#F78C26",
+    "quickReplyText": "#F78C26",
+    "quickReplyHoverBg": "#F78C26",
+    "quickReplyHoverText": "#FFFFFF",
+    "welcomeCardBg": "#222222",
+    "welcomeCardShadow": "rgba(0,0,0,0.3)",
+    "welcomeTitleText": "#FFFFFF",
+    "welcomeSubtitleText": "#888888",
+    "welcomeBtnBg": "#2a2a2a",
+    "welcomeBtnBorder": "#3a3a3a",
+    "welcomeBtnHoverBorder": "#F78C26",
+    "welcomeBtnHoverBg": "rgba(247,140,38,0.08)",
+    "welcomeBtnLabelText": "#e5e5e5",
+    "welcomeBtnDescText": "#777777",
+    "bookingCardBg": "#222222",
+    "bookingCardBorder": "#3a3a3a",
+    "bookingIconColor": "#F78C26",
+    "poweredByText": "#555555",
+    "scrollbarThumb": "#444444"
+  },
+
+  "bubble": {
+    "size": 60,
+    "iconSize": 26,
+    "position": "bottom-right",
+    "bottomOffset": 24,
+    "rightOffset": 24,
+    "glowEnabled": true,
+    "glowDuration": "3s",
+    "borderRadius": "50%"
+  },
+
+  "window": {
+    "width": 380,
+    "height": 550,
+    "borderRadius": 16,
+    "bottomOffset": 100
+  },
+
+  "header": {
+    "avatar": "🔧",
+    "avatarType": "emoji",
+    "companyName": "ROX Heating & Air",
+    "statusText": "Online",
+    "accentBarHeight": 3,
+    "accentBarColor": "#F78C26"
+  },
+
+  "messages": {
+    "botBubbleRadius": "16px",
+    "botBubbleCorner": "4px",
+    "userBubbleRadius": "16px",
+    "userBubbleCorner": "4px",
+    "fontSize": 14,
+    "lineHeight": 1.45
+  },
+
+  "quickReplies": {
+    "borderRadius": 18,
+    "fontSize": 13,
+    "fontWeight": 500,
+    "padding": "7px 14px"
+  },
+
+  "input": {
+    "borderRadius": 20,
+    "fontSize": 14,
+    "sendBtnSize": 38,
+    "sendBtnRadius": "50%"
+  },
+
+  "font": {
+    "family": "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif",
+    "importUrl": null
+  }
+}
