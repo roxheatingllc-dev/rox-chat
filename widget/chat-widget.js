@@ -76,7 +76,7 @@
     window: { width: 380, height: 550, borderRadius: 16, bottomOffset: 100 },
     header: { avatar: '🔧', avatarType: 'emoji', companyName: 'ROX Heating & Air', statusText: 'Online', accentBarHeight: 3, accentBarColor: '#F78C26' },
     messages: { botBubbleRadius: '16px', botBubbleCorner: '4px', userBubbleRadius: '16px', userBubbleCorner: '4px', bubblePadding: '12px 16px', fontSize: 14, lineHeight: 1.45 },
-    quickReplies: { borderRadius: 18, fontSize: 13, fontWeight: 500, padding: '7px 14px' },
+    quickReplies: { borderRadius: 18, fontSize: 13, fontWeight: 500, padding: '7px 14px', gap: 8 },
     welcomeCard: {
       padding: '24px 20px', borderRadius: 14,
       titleSize: 18, titleWeight: 700, titleAlign: 'center',
@@ -381,7 +381,7 @@
       }
 
       /* ---- QUICK REPLIES ---- */
-      .rox-quick-replies { display: flex; flex-wrap: wrap; gap: 6px; }
+      .rox-quick-replies { display: flex; flex-wrap: wrap; gap: ${QR.gap || 6}px; }
       .rox-quick-reply {
         background: ${C.quickReplyBg};
         border: 1.5px solid ${C.quickReplyBorder};
