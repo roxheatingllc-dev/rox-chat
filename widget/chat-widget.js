@@ -75,7 +75,7 @@
     bubble: { size: 60, iconSize: 26, bottomOffset: 24, rightOffset: 24, glowEnabled: true, glowDuration: '3s' },
     window: { width: 380, height: 550, borderRadius: 16, bottomOffset: 100 },
     header: { avatar: '🔧', avatarType: 'emoji', companyName: 'ROX Heating & Air', statusText: 'Online', accentBarHeight: 3, accentBarColor: '#F78C26' },
-    messages: { botBubbleRadius: '16px', botBubbleCorner: '4px', userBubbleRadius: '16px', userBubbleCorner: '4px', fontSize: 14, lineHeight: 1.45 },
+    messages: { botBubbleRadius: '16px', botBubbleCorner: '4px', userBubbleRadius: '16px', userBubbleCorner: '4px', bubblePadding: '12px 16px', fontSize: 14, lineHeight: 1.45 },
     quickReplies: { borderRadius: 18, fontSize: 13, fontWeight: 500, padding: '7px 14px' },
     welcomeCard: {
       padding: '24px 20px', borderRadius: 14,
@@ -362,7 +362,7 @@
         gap: 8px;
       }
       .rox-msg-bubble {
-        padding: 10px 14px;
+        padding: ${M.bubblePadding || '12px 16px'};
         border-radius: ${M.botBubbleRadius};
         font-size: ${M.fontSize}px;
         line-height: ${M.lineHeight};
