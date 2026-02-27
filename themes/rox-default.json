@@ -89,7 +89,7 @@
     "borderRadius": 18,
     "fontSize": 13,
     "fontWeight": 500,
-    "padding": "7px 14px",
+    "padding": "10px 14px",
     "gap": 8
   },
 
