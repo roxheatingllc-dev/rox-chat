@@ -1270,8 +1270,12 @@
 
       case 'select-age':
         state.data.systemAge = value;
-        // Auto-advance after selection with a brief delay for visual feedback
-        await updateSession({ systemAge: value });
+        // Send all accumulated data so engine can calculate tech tag
+        await updateSession({
+          serviceType: state.data.serviceType,
+          customerType: state.data.customerType,
+          systemAge: value
+        });
         goToStep(STEPS.CALENDAR);
         loadAvailability();
         break;
@@ -1492,8 +1496,15 @@
     render();
 
     try {
+      // Compute tech tag locally as fallback
+      let tag = 'service tech';
+      if (state.data.serviceType === 'maintenance') tag = 'maintenance tech';
+      else if (state.data.serviceType === 'estimate') tag = 'sales tech';
+      else if (state.data.systemAge === '10+') tag = 'sales tech';
+
       const result = await apiGet('/availability', {
         sessionId: state.sessionId,
+        tag: tag,
         days: '14'
       });
 
