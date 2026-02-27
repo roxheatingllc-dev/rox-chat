@@ -1,12 +1,14 @@
 /**
- * ROX Chat Server v3.1
- * Express server for the embeddable chat widget.
+ * ROX Chat Server v3.2
+ * Express server for the embeddable chat widget and booking wizard.
  * 
  * Serves:
- *   - Widget JS file (for embedding on any website)
+ *   - Chat Widget JS file (for embedding on any website)
+ *   - Booking Widget JS file (self-service scheduling)
  *   - Chat API routes (start session, send message, health check)
+ *   - Booking API routes (availability, customer lookup, confirm)
  *   - Theme API routes (list themes, get theme, reload)
- *   - Demo page for testing
+ *   - Demo pages for testing
  */
 
 require('dotenv').config();
@@ -16,6 +18,7 @@ const path = require('path');
 const chatConfig = require('./config/chat-config');
 const chatRoutes = require('./routes/chat-routes');
 const themeRoutes = require('./routes/theme-routes');
+const bookingRoutes = require('./routes/booking-routes');
 
 const app = express();
 const PORT = process.env.CHAT_PORT || process.env.PORT || 3001;
@@ -61,6 +64,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ========================================
 app.use('/api/chat', chatRoutes);
 app.use('/api/themes', themeRoutes);
+app.use('/api/booking', bookingRoutes);
 
 // ========================================
 // ROOT - Demo page
@@ -87,12 +91,14 @@ if (require.main === module) {
   app.listen(PORT, '0.0.0.0', () => {
     console.log('╔══════════════════════════════════════════════╗');
     console.log('║       ROX CHAT - EMBEDDABLE WIDGET SERVER    ║');
-    console.log('║       Version: 3.1.0                         ║');
+    console.log('║       Version: 3.2.0                         ║');
     console.log('╚══════════════════════════════════════════════╝');
     console.log(`\n🚀 Server running on port ${PORT}`);
     console.log(`🔗 Engine: ${process.env.ENGINE_API_URL || 'http://localhost:3000/api/engine'}`);
     console.log(`🌐 Demo: http://localhost:${PORT}`);
-    console.log(`📦 Widget: http://localhost:${PORT}/widget/chat-widget.js`);
+    console.log(`📦 Chat Widget: http://localhost:${PORT}/widget/chat-widget.js`);
+    console.log(`📋 Booking Widget: http://localhost:${PORT}/widget/booking-widget.js`);
+    console.log(`📅 Booking Demo: http://localhost:${PORT}/booking.html`);
     console.log(`🎨 Themes: http://localhost:${PORT}/api/themes`);
     console.log();
   });
