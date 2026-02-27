@@ -77,6 +77,16 @@
     header: { avatar: '🔧', avatarType: 'emoji', companyName: 'ROX Heating & Air', statusText: 'Online', accentBarHeight: 3, accentBarColor: '#F78C26' },
     messages: { botBubbleRadius: '16px', botBubbleCorner: '4px', userBubbleRadius: '16px', userBubbleCorner: '4px', fontSize: 14, lineHeight: 1.45 },
     quickReplies: { borderRadius: 18, fontSize: 13, fontWeight: 500, padding: '7px 14px' },
+    welcomeCard: {
+      padding: '24px 20px', borderRadius: 14,
+      titleSize: 18, titleWeight: 700, titleAlign: 'center',
+      subtitleSize: 14, subtitleAlign: 'center', subtitleMarginBottom: 20,
+      gridColumns: '1fr 1fr', gridGap: 10,
+      btnPadding: '14px 12px', btnBorderRadius: 12, btnBorderWidth: 1.5,
+      btnTextAlign: 'center', btnAlignItems: 'center',
+      btnShadow: '0 2px 6px rgba(0,0,0,0.06)', btnHoverShadow: '0 4px 12px rgba(0,0,0,0.1)', btnHoverLift: -1,
+      iconSize: 22, labelSize: 13, labelWeight: 600, descSize: 11
+    },
     input: { borderRadius: 20, fontSize: 14, sendBtnSize: 38 },
     font: { family: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif", importUrl: null }
   };
@@ -130,6 +140,7 @@
     const H = T.header;
     const M = T.messages;
     const QR = T.quickReplies;
+    const WC = T.welcomeCard;
     const I = T.input;
     const F = T.font;
 
@@ -274,51 +285,51 @@
       /* ---- WELCOME CARD ---- */
       .rox-welcome-card {
         background: ${C.chatBg};
-        border-radius: 14px;
-        padding: 24px 20px;
+        border-radius: ${WC.borderRadius}px;
+        padding: ${WC.padding};
         margin-bottom: 12px;
       }
       .rox-welcome-title {
-        font-size: 18px;
-        font-weight: 700;
+        font-size: ${WC.titleSize}px;
+        font-weight: ${WC.titleWeight};
         color: ${C.welcomeTitleText};
         margin-bottom: 4px;
-        text-align: center;
+        text-align: ${WC.titleAlign};
       }
       .rox-welcome-subtitle {
-        font-size: 14px;
+        font-size: ${WC.subtitleSize}px;
         color: ${C.welcomeSubtitleText};
-        margin-bottom: 20px;
-        text-align: center;
+        margin-bottom: ${WC.subtitleMarginBottom}px;
+        text-align: ${WC.subtitleAlign};
       }
       .rox-welcome-actions {
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
+        grid-template-columns: ${WC.gridColumns};
+        gap: ${WC.gridGap}px;
       }
       .rox-welcome-btn {
         background: ${C.welcomeBtnBg};
-        border: 1.5px solid ${C.welcomeBtnBorder};
-        border-radius: 12px;
-        padding: 14px 12px;
+        border: ${WC.btnBorderWidth}px solid ${C.welcomeBtnBorder};
+        border-radius: ${WC.btnBorderRadius}px;
+        padding: ${WC.btnPadding};
         cursor: pointer;
-        text-align: center;
+        text-align: ${WC.btnTextAlign};
         transition: all 0.2s ease;
         display: flex;
         flex-direction: column;
-        align-items: center;
+        align-items: ${WC.btnAlignItems};
         gap: 4px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+        box-shadow: ${WC.btnShadow};
       }
       .rox-welcome-btn:hover {
         border-color: ${C.welcomeBtnHoverBorder};
         background: ${C.welcomeBtnHoverBg};
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        transform: translateY(-1px);
+        box-shadow: ${WC.btnHoverShadow};
+        transform: translateY(${WC.btnHoverLift}px);
       }
-      .rox-welcome-btn-icon { font-size: 22px; line-height: 1; margin-bottom: 2px; }
-      .rox-welcome-btn-label { font-size: 13px; font-weight: 600; color: ${C.welcomeBtnLabelText}; }
-      .rox-welcome-btn-desc { font-size: 11px; color: ${C.welcomeBtnDescText}; }
+      .rox-welcome-btn-icon { font-size: ${WC.iconSize}px; line-height: 1; margin-bottom: 2px; }
+      .rox-welcome-btn-label { font-size: ${WC.labelSize}px; font-weight: ${WC.labelWeight}; color: ${C.welcomeBtnLabelText}; }
+      .rox-welcome-btn-desc { font-size: ${WC.descSize}px; color: ${C.welcomeBtnDescText}; }
 
       /* ---- MESSAGE BUBBLES ---- */
       .rox-message {

@@ -91,6 +91,31 @@
     "padding": "7px 14px"
   },
 
+  "welcomeCard": {
+    "padding": "24px 20px",
+    "borderRadius": 14,
+    "titleSize": 18,
+    "titleWeight": 700,
+    "titleAlign": "center",
+    "subtitleSize": 14,
+    "subtitleAlign": "center",
+    "subtitleMarginBottom": 20,
+    "gridColumns": "1fr 1fr",
+    "gridGap": 10,
+    "btnPadding": "14px 12px",
+    "btnBorderRadius": 12,
+    "btnBorderWidth": 1.5,
+    "btnTextAlign": "center",
+    "btnAlignItems": "center",
+    "btnShadow": "0 2px 8px rgba(0,0,0,0.2)",
+    "btnHoverShadow": "0 4px 14px rgba(0,0,0,0.3)",
+    "btnHoverLift": -1,
+    "iconSize": 22,
+    "labelSize": 13,
+    "labelWeight": 600,
+    "descSize": 11
+  },
+
   "input": {
     "borderRadius": 20,
     "fontSize": 14,
