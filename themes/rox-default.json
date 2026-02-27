@@ -80,7 +80,7 @@
     "botBubbleCorner": "4px",
     "userBubbleRadius": "16px",
     "userBubbleCorner": "4px",
-    "bubblePadding": "12px 16px",
+    "bubblePadding": "14px 16px",
     "fontSize": 14,
     "lineHeight": 1.45
   },
