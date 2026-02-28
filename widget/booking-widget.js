@@ -1361,8 +1361,6 @@
     state.currentStep = step;
     state.error = null;
     render();
-    // Scroll to top of widget
-    root.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   function goBack() {
@@ -1397,7 +1395,6 @@
       }
 
       render();
-      root.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }
 
