@@ -978,19 +978,43 @@
       daysHtml += `<button class="${cls}" ${clickable ? `data-action="select-date" data-value="${dateStr}"` : 'disabled'}>${d}</button>`;
     }
 
-    // Time slots for selected date
+    // Time slots for selected date (deduplicated by time window, short labels)
     let slotsHtml = '';
     if (state.data.selectedDate) {
       const dayData = state.availability.availableDays.find(d => d.date === state.data.selectedDate);
       if (dayData && dayData.slots.length > 0) {
+        // Deduplicate: multiple techs may share the same time window
+        // Keep first tech for each unique start time (they're interchangeable)
+        const seen = new Set();
+        const uniqueSlots = [];
+        for (let i = 0; i < dayData.slots.length; i++) {
+          const s = dayData.slots[i];
+          if (!seen.has(s.start)) {
+            seen.add(s.start);
+            uniqueSlots.push({ ...s, originalIdx: i });
+          }
+        }
+        // Format short time label: "10:00 AM - 12:00 PM"
+        const shortLabel = (s) => {
+          try {
+            const st = new Date(s.start);
+            const en = new Date(s.end);
+            const fmt = (d) => d.toLocaleTimeString('en-US', {
+              hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/Denver'
+            });
+            return fmt(st) + ' - ' + fmt(en);
+          } catch (e) {
+            return s.formatted; // Fallback to full string
+          }
+        };
         slotsHtml = `
           <div class="rxb-slots">
             <div class="rxb-slots-title">Available times for ${dayData.displayDate}</div>
             <div class="rxb-slots-grid">
-              ${dayData.slots.map((s, i) => `
-                <button class="rxb-slot-btn${state.data.selectedSlot && state.data.selectedSlot.start === s.start ? ' selected' : ''}" 
-                  data-action="select-slot" data-idx="${i}">
-                  ${s.formatted}
+              ${uniqueSlots.map(s => `
+                <button class="rxb-slot-btn${state.data.selectedSlot && state.data.selectedSlot.start === s.start ? ' selected' : ''}"
+                  data-action="select-slot" data-idx="${s.originalIdx}">
+                  ${shortLabel(s)}
                 </button>
               `).join('')}
             </div>
