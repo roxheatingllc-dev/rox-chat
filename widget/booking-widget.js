@@ -1,5 +1,5 @@
 /**
- * ROX Booking Widget v1.0 - Self-Service Scheduling Wizard
+ * ROX Booking Widget v1.1 - Self-Service Scheduling Wizard
  * 
  * Embed on any website:
  * <script>
@@ -783,9 +783,9 @@
 
   function renderServiceType() {
     const options = [
-      { value: 'repair', icon: '🔧', label: 'Repair Service', desc: 'Fix a broken or malfunctioning system' },
-      { value: 'estimate', icon: '📋', label: 'Free Estimate', desc: 'Get a quote for a new system installation' },
-      { value: 'maintenance', icon: '🛡️', label: 'Maintenance', desc: 'Annual tune-up and system check' }
+      { value: 'repair', icon: '\uD83D\uDD27', label: 'Repair Service', desc: 'Fix a broken or malfunctioning system' },
+      { value: 'estimate', icon: '\uD83D\uDCCB', label: 'Free Estimate', desc: 'Get a quote for a new system installation' },
+      { value: 'maintenance', icon: '\uD83D\uDEE1\uFE0F', label: 'Maintenance', desc: 'Annual tune-up and system check' }
     ];
 
     return `
@@ -809,8 +809,8 @@
 
   function renderCustomerType() {
     const options = [
-      { value: 'existing', icon: '👤', label: 'Existing Customer', desc: 'I\'ve used ROX before' },
-      { value: 'new', icon: '👋', label: 'New Customer', desc: 'This is my first time' }
+      { value: 'existing', icon: '\uD83D\uDC64', label: 'Existing Customer', desc: 'I\'ve used ROX before' },
+      { value: 'new', icon: '\uD83D\uDC4B', label: 'New Customer', desc: 'This is my first time' }
     ];
 
     return `
@@ -837,7 +837,7 @@
     const errorHtml = state.error ? `<div class="rxb-error">${state.error}</div>` : '';
     const customerHtml = state.data.customer ? `
       <div class="rxb-customer-card">
-        <h4>✓ Welcome back, ${state.data.customer.firstName || state.data.name}!</h4>
+        <h4>\u2714 Welcome back, ${state.data.customer.firstName || state.data.name}!</h4>
         <p>${state.data.customer.address ? `${state.data.customer.address.street}, ${state.data.customer.address.city}` : 'Account found'}</p>
       </div>
     ` : '';
@@ -876,10 +876,11 @@
 
   function renderSystemAge() {
     const options = [
-      { value: '0-2', icon: '🆕', label: '0–2 Years', desc: 'Nearly new system' },
-      { value: '3-5', icon: '✅', label: '3–5 Years', desc: 'Moderate use' },
-      { value: '6-10', icon: '⚠️', label: '6–10 Years', desc: 'Aging system' },
-      { value: '10+', icon: '🔴', label: '10+ Years', desc: 'May need replacement' }
+      { value: '0-2', icon: '\uD83C\uDD95', label: '0\u20132 Years', desc: '' },
+      { value: '3-5', icon: '\u2705', label: '3\u20135 Years', desc: '' },
+      { value: '6-10', icon: '\u26A0\uFE0F', label: '6\u201310 Years', desc: '' },
+      { value: '10+', icon: '\uD83D\uDD34', label: '10+ Years', desc: '' },
+      { value: '10+', icon: '\u2753', label: 'Not Sure', desc: '' }
     ];
 
     return `
@@ -892,7 +893,7 @@
               <div class="rxb-option-icon">${o.icon}</div>
               <div>
                 <div class="rxb-option-label">${o.label}</div>
-                <div class="rxb-option-desc">${o.desc}</div>
+                ${o.desc ? `<div class="rxb-option-desc">${o.desc}</div>` : ''}
               </div>
             </button>
           `).join('')}
@@ -1036,9 +1037,9 @@
         ${errorHtml}
         <div class="rxb-calendar">
           <div class="rxb-cal-header">
-            <button class="rxb-cal-nav-btn" data-action="cal-prev" ${!canPrev ? 'disabled' : ''}>‹</button>
+            <button class="rxb-cal-nav-btn" data-action="cal-prev" ${!canPrev ? 'disabled' : ''}>\u2039</button>
             <div class="rxb-cal-title">${monthName}</div>
-            <button class="rxb-cal-nav-btn" data-action="cal-next" ${!canNext ? 'disabled' : ''}>›</button>
+            <button class="rxb-cal-nav-btn" data-action="cal-next" ${!canNext ? 'disabled' : ''}>\u203A</button>
           </div>
           <div class="rxb-cal-grid">${daysHtml}</div>
         </div>
@@ -1129,7 +1130,7 @@
     const timeDisplay = d.selectedSlot?.formatted || '';
 
     const serviceLabels = { repair: 'Repair Service', estimate: 'Free Estimate', maintenance: 'Maintenance' };
-    const ageLabels = { '0-2': '0–2 Years', '3-5': '3–5 Years', '6-10': '6–10 Years', '10+': '10+ Years' };
+    const ageLabels = { '0-2': '0\u20132 Years', '3-5': '3\u20135 Years', '6-10': '6\u201310 Years', '10+': '10+ Years' };
 
     let addressStr = '';
     if (d.address && d.address.street) {
@@ -1181,8 +1182,8 @@
           ` : ''}
         </div>
         <div class="rxb-nav" style="border-top:none; margin-top:24px; padding-top:0;">
-          <button class="rxb-back-btn" data-action="back">← Back</button>
-          <button class="rxb-next-btn" data-action="confirm-booking">Confirm Booking ✓</button>
+          <button class="rxb-back-btn" data-action="back">\u2190 Back</button>
+          <button class="rxb-next-btn" data-action="confirm-booking">Confirm Booking \u2714</button>
         </div>
       </div>
     `;
@@ -1193,7 +1194,7 @@
     return `
       <div class="rxb-card">
         <div class="rxb-success">
-          <div class="rxb-success-icon">✓</div>
+          <div class="rxb-success-icon">\u2714</div>
           <h3>You're All Set!</h3>
           <p>Your appointment has been confirmed.</p>
           ${c ? `
@@ -1231,8 +1232,8 @@
     
     return `
       <div class="rxb-nav">
-        ${showBack && !isFirst ? '<button class="rxb-back-btn" data-action="back">← Back</button>' : '<div></div>'}
-        ${showNext ? '<button class="rxb-next-btn" data-action="next">Continue →</button>' : '<div></div>'}
+        ${showBack && !isFirst ? '<button class="rxb-back-btn" data-action="back">\u2190 Back</button>' : '<div></div>'}
+        ${showNext ? '<button class="rxb-next-btn" data-action="next">Continue \u2192</button>' : '<div></div>'}
       </div>
     `;
   }
