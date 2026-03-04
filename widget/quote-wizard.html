@@ -449,10 +449,10 @@
     }
 
     function S5({ data, onChange, onNext }) {
-      const opts = [{ id: "basement", label: "Basement", icon: "\u{1FA9C}" }, { id: "crawlspace", label: "Crawlspace", icon: "\u{1F6AA}" }, { id: "garage", label: "Garage", icon: "\u{1F3E0}" }, { id: "attic", label: "Attic", icon: "\u{1F53A}" }, { id: "closet", label: "Closet", icon: "\u{1F6AA}" }, { id: "wall_mounted", label: "Wall Mounted", icon: "\u{1F4E6}" }, { id: "packaged_unit", label: "Packaged Unit", icon: "\u{1F3D8}\u{FE0F}" }];
+      const opts = [{ id: "basement", label: "Basement", icon: "\u{1FA9C}" }, { id: "crawlspace", label: "Crawlspace", icon: "\u{1F6AA}" }, { id: "attic", label: "Attic", icon: "\u{1F53A}" }, { id: "closet", label: "Closet", icon: "\u{1F6AA}" }, { id: "unknown", label: "Not Sure", icon: "\u{2753}" }];
       return (<div className="sc" key="s5"><Av /><h1 className="st">Where is your indoor unit located?</h1>
         <div className="opr">{opts.map((o) => <div key={o.id} className={`oc ${data.unitLocation === o.id ? "sel" : ""}`} onClick={() => onChange({ ...data, unitLocation: o.id })}><div className="oi">{o.icon}</div><div className="ol">{o.label}</div><div className="orad" /></div>)}</div>
-        <div className="br"><button className="bp" disabled={!data.unitLocation} onClick={onNext}>Next</button><button className="bs" onClick={() => { onChange({ ...data, unitLocation: "unknown" }); onNext(); }}>I Don't Know</button></div></div>);
+        <button className="bp" disabled={!data.unitLocation} onClick={onNext}>Next</button></div>);
     }
 
     function S6({ data, onChange, onNext }) {
