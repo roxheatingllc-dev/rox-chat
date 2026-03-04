@@ -2,3 +2,8 @@ node_modules/
 .env
 .DS_Store
 *.log
+GOOGLE_MAPS_API_KEY=AIzaSyBsnGtC8brquzAYU38y-1Ae1QBT-JF2ROc
+# Environment variables - NEVER commit
+.env.txt
+.env
+.env.*
