@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Get an Online Quote | ROX Heating &amp; Air</title>
+  <meta name="description" content="Get an instant online quote for a new HVAC system from ROX Heating & Air. Lennox systems with flexible financing." />
+  <meta name="robots" content="noindex" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet" />
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA2bAqk6S5LGpJTDhWoQ8vZQ9h-uTLnT-w&libraries=places&loading=async"></script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f8f8; color: #333; }
+    #rox-quote-wizard { min-height: 100vh; }
+    /* Loading state while Babel compiles */
+    .wz-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; background: white; max-width: 900px; margin: 0 auto; gap: 16px; }
+    .wz-loading-spinner { width: 40px; height: 40px; border: 4px solid #e8e8e8; border-top-color: #F28C28; border-radius: 50%; animation: wzspin 0.8s linear infinite; }
+    @keyframes wzspin { to { transform: rotate(360deg); } }
+    .wz-loading-text { font-size: 15px; color: #888; font-weight: 500; }
+  </style>
+</head>
+<body>
+  <div id="rox-quote-wizard">
+    <div class="wz-loading">
+      <img src="https://www.roxheating.com/wp-content/uploads/2020/08/ROX-PNG-e1606349402873.png" alt="ROX Heating & Air" style="height: 48px; margin-bottom: 8px;" />
+      <div class="wz-loading-spinner"></div>
+      <div class="wz-loading-text">Loading your quoting tool...</div>
+    </div>
+  </div>
+
+  <script type="text/babel" data-type="module">
+    // ============================================================
+    // HVAC ONLINE QUOTING WIZARD v3 — Standalone Production Build
+    // ============================================================
+    const { useState, useEffect, useCallback } = React;
+
+    const BOOKING_API = "https://rox-chat-production.up.railway.app/api/booking";
+
+    // ============================================================
+    // COMPANY SETTINGS
+    // ============================================================
+    const CONFIG = {
+      companyName: "ROX Heating & Air",
+      companyPhone: "(720) 468-0689",
+      companyEmail: "office@RoxHeating.com",
+      websiteUrl: "https://www.roxheating.com/",
+      logoUrl: "https://www.roxheating.com/wp-content/uploads/2020/08/ROX-PNG-e1606349402873.png",
+      avatarUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/rox-online-quote.png",
+      brandColor: "#F28C28",
+      brandColorHover: "#E07B1A",
+      accentColor: "#2B8FAD",
+      financingTermMonths: 120,
+      financingAPR: 10.95,
+      showCashPrice: false,
+      showMonthlyPrice: true,
+      tenantId: "rox-heating",
+    };
+
+    // ============================================================
+    // EQUIPMENT CATALOG — 4 system types × 4 sizes × 3 tiers
+    // ============================================================
+    const EQUIPMENT_CATALOG = {
+      furnace_ac: {
+        small_mid: {
+          good:   { name: "Lennox A/C & Gas Furnace", stage: "Single Stage", description: "Single stage air conditioner with gas furnace.", cashPrice: 14000, monthlyPrice: 192.45, seer2: "Up to 14", hspf2: "N/A", afue: "Up to 80%", scope: "Basic parts and labor coverage", warranty: "Basic parts and labor coverage", sound: "Limited focus on noise reduction", comfort: "Limited focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Higher monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/good-system.png" },
+          better: { name: "Lennox A/C & Gas Furnace", stage: "2 Stage", description: "2 stage air conditioner with gas furnace. Qualifies for energy rebates.", cashPrice: 15000, monthlyPrice: 206.20, seer2: "Up to 16", hspf2: "N/A", afue: "Up to 80%", scope: "Mid-level parts and labor coverage", warranty: "Mid-level parts and labor coverage", sound: "Moderate noise reduction", comfort: "Moderate focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Moderate monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/better-best-system.png" },
+          best:   { name: "Lennox A/C & Gas Furnace", stage: "Inverter", description: "Inverter air conditioner with high efficiency furnace. Qualifies for xcel energy rebates and federal tax credits", cashPrice: 17500, monthlyPrice: 240.57, seer2: "Up to 18", hspf2: "N/A", afue: "Up to 97%", scope: "Longest and most comprehensive parts and labor coverage", warranty: "Longest and most comprehensive parts and labor coverage", sound: "Quietest system option", comfort: "Best humidity control and most consistent temperatures throughout the home", energy: "Lowest monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/better-best-system.png" },
+        },
+        medium: {
+          good:   { name: "Lennox A/C & Gas Furnace", stage: "Single Stage", description: "Single stage air conditioner with gas furnace.", cashPrice: 14500, monthlyPrice: 199.33, seer2: "Up to 14", hspf2: "N/A", afue: "Up to 80%", scope: "Basic parts and labor coverage", warranty: "Basic parts and labor coverage", sound: "Limited focus on noise reduction", comfort: "Limited focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Higher monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/good-system.png" },
+          better: { name: "Lennox A/C & Gas Furnace", stage: "2 Stage", description: "2 stage air conditioner with gas furnace. Qualifies for energy rebates.", cashPrice: 15500, monthlyPrice: 213.07, seer2: "Up to 16", hspf2: "N/A", afue: "Up to 80%", scope: "Mid-level parts and labor coverage", warranty: "Mid-level parts and labor coverage", sound: "Moderate noise reduction", comfort: "Moderate focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Moderate monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/better-best-system.png" },
+          best:   { name: "Lennox A/C & Gas Furnace", stage: "Inverter", description: "Inverter air conditioner with high efficiency furnace. Qualifies for xcel energy rebates and federal tax credits", cashPrice: 18000, monthlyPrice: 247.44, seer2: "Up to 18", hspf2: "N/A", afue: "Up to 97%", scope: "Longest and most comprehensive parts and labor coverage", warranty: "Longest and most comprehensive parts and labor coverage", sound: "Quietest system option", comfort: "Best humidity control and most consistent temperatures throughout the home", energy: "Lowest monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/better-best-system.png" },
+        },
+        mid_large: {
+          good:   { name: "Lennox A/C & Gas Furnace", stage: "Single Stage", description: "Single stage air conditioner with gas furnace.", cashPrice: 15500, monthlyPrice: 213.07, seer2: "Up to 14", hspf2: "N/A", afue: "Up to 80%", scope: "Basic parts and labor coverage", warranty: "Basic parts and labor coverage", sound: "Limited focus on noise reduction", comfort: "Limited focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Higher monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/good-system.png" },
+          better: { name: "Lennox A/C & Gas Furnace", stage: "2 Stage", description: "2 stage air conditioner with gas furnace. Qualifies for energy rebates.", cashPrice: 16000, monthlyPrice: 219.95, seer2: "Up to 16", hspf2: "N/A", afue: "Up to 80%", scope: "Mid-level parts and labor coverage", warranty: "Mid-level parts and labor coverage", sound: "Moderate noise reduction", comfort: "Moderate focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Moderate monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/better-best-system.png" },
+          best:   { name: "Lennox A/C & Gas Furnace", stage: "Inverter", description: "Inverter air conditioner with high efficiency furnace. Qualifies for xcel energy rebates and federal tax credits", cashPrice: 19000, monthlyPrice: 261.19, seer2: "Up to 18", hspf2: "N/A", afue: "Up to 97%", scope: "Longest and most comprehensive parts and labor coverage", warranty: "Longest and most comprehensive parts and labor coverage", sound: "Quietest system option", comfort: "Best humidity control and most consistent temperatures throughout the home", energy: "Lowest monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/better-best-system.png" },
+        },
+        large: {
+          good:   { name: "Lennox A/C & Gas Furnace", stage: "Single Stage", description: "Single stage air conditioner with gas furnace.", cashPrice: 16500, monthlyPrice: 226.82, seer2: "Up to 14", hspf2: "N/A", afue: "Up to 80%", scope: "Basic parts and labor coverage", warranty: "Basic parts and labor coverage", sound: "Limited focus on noise reduction", comfort: "Limited focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Higher monthly energy bills", imageUrl: "" },
+          better: { name: "Lennox A/C & Gas Furnace", stage: "2 Stage", description: "2 stage air conditioner with gas furnace. Qualifies for energy rebates.", cashPrice: 17800, monthlyPrice: 244.69, seer2: "Up to 16", hspf2: "N/A", afue: "Up to 80%", scope: "Mid-level parts and labor coverage", warranty: "Mid-level parts and labor coverage", sound: "Moderate noise reduction", comfort: "Moderate focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Moderate monthly energy bills", imageUrl: "" },
+          best:   { name: "Lennox A/C & Gas Furnace", stage: "Inverter", description: "Inverter air conditioner with high efficiency furnace. Qualifies for xcel energy rebates and federal tax credits", cashPrice: 21000, monthlyPrice: 288.68, seer2: "Up to 18", hspf2: "N/A", afue: "Up to 97%", scope: "Longest and most comprehensive parts and labor coverage", warranty: "Longest and most comprehensive parts and labor coverage", sound: "Quietest system option", comfort: "Best humidity control and most consistent temperatures throughout the home", energy: "Lowest monthly energy bills", imageUrl: "" },
+        },
+      },
+      furnace_hp: {
+        small_mid: {
+          good:   { name: "Lennox HP & Gas Furnace", stage: "Single Stage", description: "Single Stage with variable capacity furnace. Qualifies for xcel energy rebates and federal tax credits", cashPrice: 16000, monthlyPrice: 219.95, seer2: "Up to 16", hspf2: "Up to 8.5", afue: "Up to 80%", scope: "Basic parts and labor coverage", warranty: "Basic parts and labor coverage", sound: "Limited focus on noise reduction", comfort: "Limited focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Higher monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/good-system.png" },
+          better: { name: "Lennox HP & Gas Furnace", stage: "2 Stage", description: "Inverter heat pump with 2 stage high efficiency furnace. Qualifies for xcel energy rebates and federal tax credits", cashPrice: 18000, monthlyPrice: 247.44, seer2: "Up to 18", hspf2: "Up to 9", afue: "Up to 80%", scope: "Mid-level parts and labor coverage", warranty: "Mid-level parts and labor coverage", sound: "Moderate noise reduction", comfort: "Moderate focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Moderate monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/better-best-system.png" },
+          best:   { name: "Lennox HP & Gas Furnace", stage: "Inverter", description: "Signature heat pump with high efficiency modulating furnace. Qualifies for xcel energy rebates and federal tax credits", cashPrice: 20000, monthlyPrice: 274.93, seer2: "Up to 22", hspf2: "Up to 10", afue: "Up to 97%", scope: "Longest and most comprehensive parts and labor coverage", warranty: "Longest and most comprehensive parts and labor coverage", sound: "Quietest system option", comfort: "Best humidity control and most consistent temperatures throughout the home", energy: "Lowest monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/better-best-system.png" },
+        },
+        medium: {
+          good:   { name: "Lennox HP & Gas Furnace", stage: "Single Stage", description: "Single Stage with variable capacity furnace. Qualifies for xcel energy rebates and federal tax credits", cashPrice: 16500, monthlyPrice: 226.82, seer2: "Up to 16", hspf2: "Up to 8.5", afue: "Up to 80%", scope: "Basic parts and labor coverage", warranty: "Basic parts and labor coverage", sound: "Limited focus on noise reduction", comfort: "Limited focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Higher monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/good-system.png" },
+          better: { name: "Lennox HP & Gas Furnace", stage: "2 Stage", description: "Inverter heat pump with 2 stage high efficiency furnace. Qualifies for xcel energy rebates and federal tax credits", cashPrice: 17000, monthlyPrice: 233.69, seer2: "Up to 18", hspf2: "Up to 9", afue: "Up to 80%", scope: "Mid-level parts and labor coverage", warranty: "Mid-level parts and labor coverage", sound: "Moderate noise reduction", comfort: "Moderate focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Moderate monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/better-best-system.png" },
+          best:   { name: "Lennox HP & Gas Furnace", stage: "Inverter", description: "Signature heat pump with high efficiency modulating furnace. Qualifies for xcel energy rebates and federal tax credits", cashPrice: 19000, monthlyPrice: 261.19, seer2: "Up to 22", hspf2: "Up to 10", afue: "Up to 97%", scope: "Longest and most comprehensive parts and labor coverage", warranty: "Longest and most comprehensive parts and labor coverage", sound: "Quietest system option", comfort: "Best humidity control and most consistent temperatures throughout the home", energy: "Lowest monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/better-best-system.png" },
+        },
+        mid_large: {
+          good:   { name: "Lennox HP & Gas Furnace", stage: "Single Stage", description: "Single Stage with variable capacity furnace. Qualifies for xcel energy rebates and federal tax credits", cashPrice: 17500, monthlyPrice: 240.57, seer2: "Up to 16", hspf2: "Up to 8.5", afue: "Up to 80%", scope: "Basic parts and labor coverage", warranty: "Basic parts and labor coverage", sound: "Limited focus on noise reduction", comfort: "Limited focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Higher monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/good-system.png" },
+          better: { name: "Lennox HP & Gas Furnace", stage: "2 Stage", description: "Inverter heat pump with 2 stage high efficiency furnace. Qualifies for xcel energy rebates and federal tax credits", cashPrice: 18500, monthlyPrice: 254.31, seer2: "Up to 18", hspf2: "Up to 9", afue: "Up to 80%", scope: "Mid-level parts and labor coverage", warranty: "Mid-level parts and labor coverage", sound: "Moderate noise reduction", comfort: "Moderate focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Moderate monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/better-best-system.png" },
+          best:   { name: "Lennox HP & Gas Furnace", stage: "Inverter", description: "Signature heat pump with high efficiency modulating furnace. Qualifies for xcel energy rebates and federal tax credits", cashPrice: 21500, monthlyPrice: 295.55, seer2: "Up to 22", hspf2: "Up to 10", afue: "Up to 97%", scope: "Longest and most comprehensive parts and labor coverage", warranty: "Longest and most comprehensive parts and labor coverage", sound: "Quietest system option", comfort: "Best humidity control and most consistent temperatures throughout the home", energy: "Lowest monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/better-best-system.png" },
+        },
+        large: {
+          good:   { name: "Lennox HP & Gas Furnace", stage: "Single Stage", description: "Single Stage with variable capacity furnace. Qualifies for xcel energy rebates and federal tax credits", cashPrice: 18500, monthlyPrice: 254.31, seer2: "Up to 16", hspf2: "Up to 8.5", afue: "Up to 80%", scope: "Basic parts and labor coverage", warranty: "Basic parts and labor coverage", sound: "Limited focus on noise reduction", comfort: "Limited focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Higher monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/good-system.png" },
+          better: { name: "Lennox HP & Gas Furnace", stage: "2 Stage", description: "Inverter heat pump with 2 stage high efficiency furnace. Qualifies for xcel energy rebates and federal tax credits", cashPrice: 19500, monthlyPrice: 268.06, seer2: "Up to 18", hspf2: "Up to 9", afue: "Up to 80%", scope: "Mid-level parts and labor coverage", warranty: "Mid-level parts and labor coverage", sound: "Moderate noise reduction", comfort: "Moderate focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Moderate monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/better-best-system.png" },
+          best:   { name: "Lennox HP & Gas Furnace", stage: "Inverter", description: "Signature heat pump with high efficiency modulating furnace. Qualifies for xcel energy rebates and federal tax credits", cashPrice: 24000, monthlyPrice: 329.92, seer2: "Up to 22", hspf2: "Up to 10", afue: "Up to 97%", scope: "Longest and most comprehensive parts and labor coverage", warranty: "Longest and most comprehensive parts and labor coverage", sound: "Quietest system option", comfort: "Best humidity control and most consistent temperatures throughout the home", energy: "Lowest monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/better-best-system.png" },
+        },
+      },
+      furnace_only: {
+        small_mid: {
+          good:   { name: "Lennox Gas Furnace", stage: "Single Stage", description: "Single stage gas furnace.", cashPrice: 6000, monthlyPrice: 82.48, seer2: "N/A", hspf2: "N/A", afue: "Up to 80%", scope: "Basic parts and labor coverage", warranty: "Basic parts and labor coverage", sound: "Limited focus on noise reduction", comfort: "Limited focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Higher monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/ml180v-prod.png" },
+          better: { name: "Lennox Gas Furnace", stage: "2 stage furnace with variable speed motor", description: "2 stage furnace with variable speed motor for improved comfort.", cashPrice: 8000, monthlyPrice: 109.97, seer2: "N/A", hspf2: "N/A", afue: "Up to 80%", scope: "Mid-level parts and labor coverage", warranty: "Mid-level parts and labor coverage", sound: "Moderate noise reduction", comfort: "Moderate focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Moderate monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/Furnace-EL297-SL280v.png" },
+          best:   { name: "Lennox Gas Furnace", stage: "2 stage high efficiency furnace with variable speed motor", description: "2 stage high efficiency furnace with variable speed motor. Qualifies for energy rebates.", cashPrice: 10000, monthlyPrice: 137.47, seer2: "N/A", hspf2: "N/A", afue: "Up to 97%", scope: "Longest and most comprehensive parts and labor coverage", warranty: "Longest and most comprehensive parts and labor coverage", sound: "Quietest system option", comfort: "Best humidity control and most consistent temperatures throughout the home", energy: "Lowest monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/Furnace-EL297-SL280v.png" },
+        },
+        medium: {
+          good:   { name: "Lennox Gas Furnace", stage: "Single Stage", description: "Single stage gas furnace.", cashPrice: 6800, monthlyPrice: 93.48, seer2: "N/A", hspf2: "N/A", afue: "Up to 80%", scope: "Basic parts and labor coverage", warranty: "Basic parts and labor coverage", sound: "Limited focus on noise reduction", comfort: "Limited focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Higher monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/ml180v-prod.png" },
+          better: { name: "Lennox Gas Furnace", stage: "2 stage furnace with variable speed motor", description: "2 stage furnace with variable speed motor for improved comfort.", cashPrice: 8800, monthlyPrice: 120.97, seer2: "N/A", hspf2: "N/A", afue: "Up to 80%", scope: "Mid-level parts and labor coverage", warranty: "Mid-level parts and labor coverage", sound: "Moderate noise reduction", comfort: "Moderate focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Moderate monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/Furnace-EL297-SL280v.png" },
+          best:   { name: "Lennox Gas Furnace", stage: "2 stage high efficiency furnace with variable speed motor", description: "2 stage high efficiency furnace with variable speed motor. Qualifies for energy rebates.", cashPrice: 10800, monthlyPrice: 148.46, seer2: "N/A", hspf2: "N/A", afue: "Up to 97%", scope: "Longest and most comprehensive parts and labor coverage", warranty: "Longest and most comprehensive parts and labor coverage", sound: "Quietest system option", comfort: "Best humidity control and most consistent temperatures throughout the home", energy: "Lowest monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/Furnace-EL297-SL280v.png" },
+        },
+        mid_large: {
+          good:   { name: "Lennox Gas Furnace", stage: "Single Stage", description: "Single stage gas furnace.", cashPrice: 7800, monthlyPrice: 107.22, seer2: "N/A", hspf2: "N/A", afue: "Up to 80%", scope: "Basic parts and labor coverage", warranty: "Basic parts and labor coverage", sound: "Limited focus on noise reduction", comfort: "Limited focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Higher monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/ml180v-prod.png" },
+          better: { name: "Lennox Gas Furnace", stage: "2 stage furnace with variable speed motor", description: "2 stage furnace with variable speed motor for improved comfort.", cashPrice: 9500, monthlyPrice: 130.59, seer2: "N/A", hspf2: "N/A", afue: "Up to 80%", scope: "Mid-level parts and labor coverage", warranty: "Mid-level parts and labor coverage", sound: "Moderate noise reduction", comfort: "Moderate focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Moderate monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/Furnace-EL297-SL280v.png" },
+          best:   { name: "Lennox Gas Furnace", stage: "2 stage high efficiency furnace with variable speed motor", description: "2 stage high efficiency furnace with variable speed motor. Qualifies for energy rebates.", cashPrice: 11500, monthlyPrice: 158.09, seer2: "N/A", hspf2: "N/A", afue: "Up to 97%", scope: "Longest and most comprehensive parts and labor coverage", warranty: "Longest and most comprehensive parts and labor coverage", sound: "Quietest system option", comfort: "Best humidity control and most consistent temperatures throughout the home", energy: "Lowest monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/Furnace-EL297-SL280v.png" },
+        },
+        large: {
+          good:   { name: "Lennox Gas Furnace", stage: "Single Stage", description: "Single stage gas furnace.", cashPrice: 8500, monthlyPrice: 116.85, seer2: "N/A", hspf2: "N/A", afue: "Up to 80%", scope: "Basic parts and labor coverage", warranty: "Basic parts and labor coverage", sound: "Limited focus on noise reduction", comfort: "Limited focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Higher monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/ml180v-prod.png" },
+          better: { name: "Lennox Gas Furnace", stage: "2 stage furnace with variable speed motor", description: "2 stage furnace with variable speed motor for improved comfort.", cashPrice: 10200, monthlyPrice: 140.22, seer2: "N/A", hspf2: "N/A", afue: "Up to 80%", scope: "Mid-level parts and labor coverage", warranty: "Mid-level parts and labor coverage", sound: "Moderate noise reduction", comfort: "Moderate focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Moderate monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/Furnace-EL297-SL280v.png" },
+          best:   { name: "Lennox Gas Furnace", stage: "2 stage high efficiency furnace with variable speed motor", description: "2 stage high efficiency furnace with variable speed motor. Qualifies for energy rebates.", cashPrice: 12400, monthlyPrice: 170.46, seer2: "N/A", hspf2: "N/A", afue: "Up to 97%", scope: "Longest and most comprehensive parts and labor coverage", warranty: "Longest and most comprehensive parts and labor coverage", sound: "Quietest system option", comfort: "Best humidity control and most consistent temperatures throughout the home", energy: "Lowest monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/Furnace-EL297-SL280v.png" },
+        },
+      },
+      ac_only: {
+        small_mid: {
+          good:   { name: "Lennox A/C & Coil", stage: "Single stage AC", description: "Single stage air conditioner with coil.", cashPrice: 10000, monthlyPrice: 137.47, seer2: "Up to 13", hspf2: "N/A", afue: "N/A", scope: "Basic parts and labor coverage", warranty: "Basic parts and labor coverage", sound: "Limited focus on noise reduction", comfort: "Limited focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Higher monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/single-stage-merit-ac.png" },
+          better: { name: "Lennox A/C & Coil", stage: "Single stage AC", description: "Single stage air conditioner with coil. Improved efficiency.", cashPrice: 12000, monthlyPrice: 164.96, seer2: "Up to 14", hspf2: "N/A", afue: "N/A", scope: "Mid-level parts and labor coverage", warranty: "Mid-level parts and labor coverage", sound: "Moderate noise reduction", comfort: "Moderate focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Moderate monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/single-stage-merit-ac.png" },
+          best:   { name: "Lennox A/C & Coil", stage: "Elite Single stage AC", description: "Elite single stage air conditioner with coil. Best in class efficiency.", cashPrice: 14000, monthlyPrice: 192.45, seer2: "Up to 16", hspf2: "N/A", afue: "N/A", scope: "Longest and most comprehensive parts and labor coverage", warranty: "Longest and most comprehensive parts and labor coverage", sound: "Quietest system option", comfort: "Best humidity control and most consistent temperatures throughout the home", energy: "Lowest monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/el16xc1-prod.png" },
+        },
+        medium: {
+          good:   { name: "Lennox A/C & Coil", stage: "Single stage AC", description: "Single stage air conditioner with coil.", cashPrice: 10500, monthlyPrice: 144.34, seer2: "Up to 13", hspf2: "N/A", afue: "N/A", scope: "Basic parts and labor coverage", warranty: "Basic parts and labor coverage", sound: "Limited focus on noise reduction", comfort: "Limited focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Higher monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/single-stage-merit-ac.png" },
+          better: { name: "Lennox A/C & Coil", stage: "Single stage AC", description: "Single stage air conditioner with coil. Improved efficiency.", cashPrice: 12500, monthlyPrice: 171.83, seer2: "Up to 14", hspf2: "N/A", afue: "N/A", scope: "Mid-level parts and labor coverage", warranty: "Mid-level parts and labor coverage", sound: "Moderate noise reduction", comfort: "Moderate focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Moderate monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/single-stage-merit-ac.png" },
+          best:   { name: "Lennox A/C & Coil", stage: "Elite Single stage AC", description: "Elite single stage air conditioner with coil. Best in class efficiency.", cashPrice: 14500, monthlyPrice: 199.33, seer2: "Up to 16", hspf2: "N/A", afue: "N/A", scope: "Longest and most comprehensive parts and labor coverage", warranty: "Longest and most comprehensive parts and labor coverage", sound: "Quietest system option", comfort: "Best humidity control and most consistent temperatures throughout the home", energy: "Lowest monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/el16xc1-prod.png" },
+        },
+        mid_large: {
+          good:   { name: "Lennox A/C & Coil", stage: "Single stage AC", description: "Single stage air conditioner with coil.", cashPrice: 11500, monthlyPrice: 158.09, seer2: "Up to 13", hspf2: "N/A", afue: "N/A", scope: "Basic parts and labor coverage", warranty: "Basic parts and labor coverage", sound: "Limited focus on noise reduction", comfort: "Limited focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Higher monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/single-stage-merit-ac.png" },
+          better: { name: "Lennox A/C & Coil", stage: "Single stage AC", description: "Single stage air conditioner with coil. Improved efficiency.", cashPrice: 13500, monthlyPrice: 185.58, seer2: "Up to 14", hspf2: "N/A", afue: "N/A", scope: "Mid-level parts and labor coverage", warranty: "Mid-level parts and labor coverage", sound: "Moderate noise reduction", comfort: "Moderate focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Moderate monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/single-stage-merit-ac.png" },
+          best:   { name: "Lennox A/C & Coil", stage: "Elite Single stage AC", description: "Elite single stage air conditioner with coil. Best in class efficiency.", cashPrice: 15500, monthlyPrice: 213.07, seer2: "Up to 16", hspf2: "N/A", afue: "N/A", scope: "Longest and most comprehensive parts and labor coverage", warranty: "Longest and most comprehensive parts and labor coverage", sound: "Quietest system option", comfort: "Best humidity control and most consistent temperatures throughout the home", energy: "Lowest monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/el16xc1-prod.png" },
+        },
+        large: {
+          good:   { name: "Lennox A/C & Coil", stage: "Single stage AC", description: "Single stage air conditioner with coil.", cashPrice: 12000, monthlyPrice: 164.96, seer2: "Up to 13", hspf2: "N/A", afue: "N/A", scope: "Basic parts and labor coverage", warranty: "Basic parts and labor coverage", sound: "Limited focus on noise reduction", comfort: "Limited focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Higher monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/single-stage-merit-ac.png" },
+          better: { name: "Lennox A/C & Coil", stage: "Single stage AC", description: "Single stage air conditioner with coil. Improved efficiency.", cashPrice: 14000, monthlyPrice: 192.45, seer2: "Up to 14", hspf2: "N/A", afue: "N/A", scope: "Mid-level parts and labor coverage", warranty: "Mid-level parts and labor coverage", sound: "Moderate noise reduction", comfort: "Moderate focus on controlling humidity and creating consistent temperatures throughout the home", energy: "Moderate monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/single-stage-merit-ac.png" },
+          best:   { name: "Lennox A/C & Coil", stage: "Elite Single stage AC", description: "Elite single stage air conditioner with coil. Best in class efficiency.", cashPrice: 16000, monthlyPrice: 219.95, seer2: "Up to 16", hspf2: "N/A", afue: "N/A", scope: "Longest and most comprehensive parts and labor coverage", warranty: "Longest and most comprehensive parts and labor coverage", sound: "Quietest system option", comfort: "Best humidity control and most consistent temperatures throughout the home", energy: "Lowest monthly energy bills", imageUrl: "https://www.roxheating.com/wp-content/uploads/2026/03/el16xc1-prod.png" },
+        },
+      },
+    };
+
+    const SYSTEM_TYPES = [
+      { id: "furnace_ac", label: "Furnace + A/C", icon: "\u{1F525}\u{2744}\u{FE0F}" },
+      { id: "furnace_hp", label: "Furnace + Heat Pump", icon: "\u{1F525}\u{2668}\u{FE0F}" },
+      { id: "furnace_only", label: "Furnace Only", icon: "\u{1F525}" },
+      { id: "ac_only", label: "A/C Only", icon: "\u{2744}\u{FE0F}" },
+    ];
+    const SIZE_LABELS = { small_mid: "Small-Mid (0\u20131,400 sq.ft.)", medium: "Medium (1,400\u20131,800 sq.ft.)", mid_large: "Mid-Large (1,800\u20132,400 sq.ft.)", large: "Large (2,400+ sq.ft.)" };
+    const TIER_LABELS = { good: "Good", better: "Better", best: "Best" };
+
+    // ============================================================
+    // BOOKING API HELPERS
+    // ============================================================
+    async function bookingPost(path, body) {
+      const res = await fetch(`${BOOKING_API}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!res.ok) { const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` })); throw new Error(err.error || `Request failed: ${res.status}`); }
+      return res.json();
+    }
+    async function bookingGet(path, params = {}) {
+      const q = new URLSearchParams(params).toString();
+      const res = await fetch(`${BOOKING_API}${path}${q ? "?" + q : ""}`);
+      if (!res.ok) { const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` })); throw new Error(err.error || `Request failed: ${res.status}`); }
+      return res.json();
+    }
+
+    // ============================================================
+    // DYNAMIC STYLES
+    // ============================================================
+    const wzStyles = `
+      .wz { max-width: 900px; margin: 0 auto; min-height: 100vh; background: white; display: flex; flex-direction: column; }
+      .hdr { display: flex; align-items: center; justify-content: space-between; padding: 12px 24px; border-bottom: 1px solid #eee; background: white; position: sticky; top: 0; z-index: 100; }
+      .hdr-logo { height: 40px; object-fit: contain; }
+      .hdr-acts { display: flex; gap: 12px; align-items: center; }
+      .hdr-btn { width: 36px; height: 36px; border-radius: 50%; border: 2px solid #ccc; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #666; font-size: 18px; transition: all 0.2s; }
+      .hdr-btn:hover { border-color: #999; color: #333; }
+      .av-sec { display: flex; flex-direction: column; align-items: center; padding-top: 24px; }
+      .av-circ { width: 80px; height: 80px; border-radius: 50%; overflow: hidden; border: 3px solid ${CONFIG.brandColor}33; margin-bottom: 8px; background: linear-gradient(135deg, ${CONFIG.brandColor}22, ${CONFIG.brandColor}44); display: flex; align-items: center; justify-content: center; }
+      .av-circ img { width: 100%; height: 100%; object-fit: cover; }
+      .sc { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 0 24px 24px; animation: fadeUp 0.4s ease-out; }
+      @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+      .st { font-size: 28px; font-weight: 700; text-align: center; margin: 16px 0 32px; line-height: 1.3; color: #222; max-width: 520px; }
+      .nav-r { display: flex; align-items: center; width: 100%; padding: 0 24px; margin-bottom: 8px; }
+      .bk-btn { width: 40px; height: 40px; border-radius: 50%; border: 2px solid #ccc; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #666; font-size: 20px; transition: all 0.2s; }
+      .bk-btn:hover { border-color: #999; color: #333; }
+      .ir { display: flex; gap: 16px; width: 100%; max-width: 520px; margin-bottom: 24px; }
+      .inf { flex: 1; padding: 16px 20px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px; font-family: 'DM Sans', sans-serif; transition: border-color 0.2s; outline: none; background: white; }
+      .inf:focus { border-color: ${CONFIG.brandColor}; }
+      .inf::placeholder { color: #999; }
+      .inf.sm { flex: 0 0 120px; }
+      .aw { position: relative; width: 100%; max-width: 520px; }
+      .ar { display: flex; gap: 12px; }
+      .acd { position: absolute; top: 100%; left: 0; right: 120px; background: white; border: 2px solid #ddd; border-top: none; border-radius: 0 0 8px 8px; z-index: 50; max-height: 240px; overflow-y: auto; }
+      .aci { padding: 14px 20px; cursor: pointer; font-size: 15px; color: #444; transition: background 0.15s; }
+      .aci:hover { background: #f5f5f5; }
+      .mp { width: 100%; max-width: 520px; height: 120px; background: linear-gradient(135deg, #e8f4e8, #d4eaf4); border-radius: 12px; margin-bottom: 16px; display: flex; align-items: center; justify-content: center; font-size: 40px; position: relative; overflow: hidden; }
+      .mp::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 49%, #cde4cc 49%, #cde4cc 51%, transparent 51%), linear-gradient(0deg, transparent 49%, #cde4cc 49%, #cde4cc 51%, transparent 51%); background-size: 40px 40px; opacity: 0.4; }
+      .opr { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; margin-bottom: 32px; max-width: 700px; }
+      .oc { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; transition: all 0.2s; min-width: 100px; }
+      .oi { width: 90px; height: 90px; border-radius: 12px; background: #f5f5f5; display: flex; align-items: center; justify-content: center; font-size: 36px; transition: all 0.2s; border: 2px solid transparent; }
+      .oc:hover .oi { background: #eee; }
+      .oc.sel .oi { background: ${CONFIG.brandColor}15; border-color: ${CONFIG.brandColor}; }
+      .ol { font-size: 14px; font-weight: 500; text-align: center; color: #444; max-width: 110px; }
+      .orad { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #ccc; background: white; transition: all 0.2s; position: relative; }
+      .oc.sel .orad { border-color: ${CONFIG.brandColor}; background: ${CONFIG.brandColor}; }
+      .oc.sel .orad::after { content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 8px; height: 8px; border-radius: 50%; background: white; }
+      .lo { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 420px; margin-bottom: 24px; }
+      .li { display: flex; align-items: center; gap: 16px; padding: 16px 20px; border-radius: 12px; background: #f8f8f8; cursor: pointer; transition: all 0.2s; border: 2px solid transparent; }
+      .li:hover { background: #f0f0f0; }
+      .li.sel { background: ${CONFIG.brandColor}10; border-color: ${CONFIG.brandColor}; }
+      .li .orad { flex-shrink: 0; }
+      .lil { font-size: 16px; font-weight: 500; color: #333; }
+      .bp { padding: 16px 48px; background: ${CONFIG.brandColor}; color: white; border: none; border-radius: 8px; font-size: 17px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: 'DM Sans', sans-serif; min-width: 200px; }
+      .bp:hover { background: ${CONFIG.brandColorHover}; transform: translateY(-1px); box-shadow: 0 4px 12px ${CONFIG.brandColor}44; }
+      .bp:disabled { background: #ccc; cursor: not-allowed; transform: none; box-shadow: none; }
+      .bs { padding: 16px 32px; background: white; color: #666; border: 2px solid #ddd; border-radius: 8px; font-size: 16px; font-weight: 500; cursor: pointer; transition: all 0.2s; font-family: 'DM Sans', sans-serif; }
+      .bs:hover { border-color: #bbb; color: #333; }
+      .br { display: flex; gap: 12px; align-items: center; margin-top: 8px; }
+      .rc { background: #f8f8f8; border-radius: 12px; padding: 24px 32px; width: 100%; max-width: 480px; margin-bottom: 24px; }
+      .rg { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+      .ril { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #888; font-weight: 600; margin-bottom: 4px; }
+      .riv { font-size: 16px; font-weight: 600; color: #222; }
+      .ls { display: flex; flex-direction: column; align-items: center; gap: 24px; padding-top: 40px; }
+      .lbc { width: 100%; max-width: 400px; height: 8px; background: #e8e8e8; border-radius: 4px; overflow: hidden; }
+      .lb { height: 100%; background: ${CONFIG.brandColor}; border-radius: 4px; transition: width 0.3s ease; }
+      .ll { font-size: 15px; color: #888; font-weight: 500; }
+      .resg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; width: 100%; max-width: 800px; margin-bottom: 32px; }
+      @media (max-width: 700px) { .resg { grid-template-columns: 1fr; max-width: 380px; } }
+      .resc { border: 2px solid #e8e8e8; border-radius: 16px; padding: 24px 20px; display: flex; flex-direction: column; align-items: center; text-align: center; transition: all 0.25s; background: white; position: relative; }
+      .resc:hover { border-color: ${CONFIG.brandColor}; box-shadow: 0 8px 24px rgba(0,0,0,0.08); transform: translateY(-2px); }
+      .resc.hl { border-color: ${CONFIG.brandColor}; box-shadow: 0 4px 20px ${CONFIG.brandColor}22; }
+      .tl { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-bottom: 16px; }
+      .resc.hl .tl { color: ${CONFIG.brandColor}; }
+      .eq-img { width: 100px; height: 100px; object-fit: contain; margin-bottom: 16px; border-radius: 8px; }
+      .eq-icon { font-size: 60px; margin-bottom: 16px; opacity: 0.9; }
+      .en { font-size: 18px; font-weight: 700; color: #222; margin-bottom: 4px; line-height: 1.3; }
+      .es { font-size: 13px; color: #888; margin-bottom: 12px; line-height: 1.4; }
+      .pl { font-size: 12px; color: #888; margin-bottom: 4px; }
+      .pv { font-size: 20px; font-weight: 700; color: ${CONFIG.brandColor}; margin-bottom: 4px; }
+      .pv span { font-size: 14px; font-weight: 400; color: #888; }
+      .cp { font-size: 13px; color: #888; margin-bottom: 16px; }
+      .sl { width: 100%; border-top: 1px solid #eee; padding-top: 16px; margin-top: 8px; }
+      .sr { display: flex; justify-content: space-between; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+      .sr:last-child { border-bottom: none; }
+      .slbl { font-size: 13px; font-weight: 700; color: ${CONFIG.accentColor}; flex-shrink: 0; }
+      .sval { font-size: 13px; color: #666; text-align: right; }
+      .sbtn { padding: 14px 24px; background: ${CONFIG.brandColor}; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: 'DM Sans', sans-serif; width: 100%; margin-top: 16px; }
+      .sbtn:hover { background: ${CONFIG.brandColorHover}; }
+      .cnote { font-size: 12px; color: #999; margin-top: 8px; font-style: italic; }
+      .sat { font-size: 13px; color: ${CONFIG.accentColor}; cursor: pointer; margin-top: 8px; text-decoration: underline; background: none; border: none; font-family: 'DM Sans', sans-serif; }
+      .fr { display: flex; justify-content: space-between; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+      .flbl { font-size: 13px; font-weight: 700; color: #333; flex-shrink: 0; min-width: 90px; }
+      .fval { font-size: 13px; color: #666; text-align: right; flex: 1; margin-left: 12px; }
+      .cc { width: 100%; max-width: 560px; margin-bottom: 24px; }
+      .ch { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+      .ct { font-size: 16px; font-weight: 600; }
+      .cn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border: 1px solid #ddd; border-radius: 8px; background: white; cursor: pointer; font-size: 14px; color: #666; transition: all 0.15s; }
+      .cn:hover { border-color: ${CONFIG.brandColor}; color: ${CONFIG.brandColor}; }
+      .cn:disabled { opacity: 0.3; cursor: default; }
+      .cg { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+      .cdw { font-size: 11px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 0; }
+      .cd { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 500; border-radius: 10px; border: none; background: transparent; color: #ccc; cursor: default; transition: all 0.15s; }
+      .cd.emp { visibility: hidden; }
+      .cd.avl { background: ${CONFIG.brandColor}10; color: ${CONFIG.brandColor}; font-weight: 600; cursor: pointer; }
+      .cd.avl:hover { background: ${CONFIG.brandColor}; color: #fff; transform: scale(1.08); }
+      .cd.seld { background: ${CONFIG.brandColor}; color: #fff; font-weight: 700; box-shadow: 0 2px 8px ${CONFIG.brandColor}55; }
+      .cd.pst { opacity: 0.3; }
+      .sls { margin-top: 20px; animation: fadeUp 0.3s ease; }
+      .slt { font-size: 14px; font-weight: 600; color: #555; margin-bottom: 12px; }
+      .slg { display: flex; flex-wrap: wrap; gap: 8px; }
+      .slb { padding: 10px 16px; border: 2px solid #e5e5e5; border-radius: 8px; background: white; cursor: pointer; font-size: 14px; font-weight: 500; color: #444; transition: all 0.15s; font-family: 'DM Sans', sans-serif; }
+      .slb:hover { border-color: ${CONFIG.brandColor}; color: ${CONFIG.brandColor}; }
+      .slb.seld { border-color: ${CONFIG.brandColor}; background: ${CONFIG.brandColor}; color: white; }
+      .eb { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; width: 100%; max-width: 520px; text-align: center; }
+      .spn { width: 40px; height: 40px; border: 4px solid #e8e8e8; border-top-color: ${CONFIG.brandColor}; border-radius: 50%; animation: spin 0.8s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .ht { display: flex; align-items: flex-start; gap: 12px; max-width: 480px; margin-top: auto; padding: 16px; background: #fafafa; border-radius: 12px; margin-bottom: 24px; }
+      .has { width: 40px; height: 40px; border-radius: 50%; overflow: hidden; flex-shrink: 0; background: linear-gradient(135deg, ${CONFIG.brandColor}22, ${CONFIG.brandColor}44); display: flex; align-items: center; justify-content: center; }
+      .has img { width: 100%; height: 100%; object-fit: cover; }
+      .htx { font-size: 14px; color: #666; line-height: 1.5; }
+      .wf { padding: 12px 24px; border-top: 1px solid #eee; background: #fafafa; }
+      .ft { font-size: 11px; color: #aaa; line-height: 1.5; }
+      .tys { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 16px; }
+      .tye { font-weight: 700; color: #222; }
+      .tyt { font-size: 15px; color: #666; }
+      .gab { color: ${CONFIG.accentColor}; background: none; border: none; font-size: 16px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; text-decoration: underline; }
+      .ii { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: ${CONFIG.accentColor}; color: white; font-size: 11px; font-weight: 700; margin-left: 4px; cursor: help; vertical-align: middle; }
+      .tw { position: relative; display: inline-flex; }
+      .tw:hover .tp { opacity: 1; visibility: visible; }
+      .tp { position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; white-space: nowrap; opacity: 0; visibility: hidden; transition: all 0.2s; pointer-events: none; z-index: 10; }
+      .cfr { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+      .cfr:last-child { border-bottom: none; }
+      .cfl { font-size: 13px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+      .cfv { font-size: 15px; font-weight: 600; color: #222; text-align: right; max-width: 60%; }
+      /* Google Places autocomplete dropdown styling */
+      .pac-container { font-family: 'DM Sans', sans-serif !important; border-radius: 0 0 8px 8px !important; border: 2px solid #ddd !important; border-top: none !important; box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important; margin-top: -2px !important; z-index: 9999 !important; }
+      .pac-item { padding: 12px 20px !important; font-size: 15px !important; cursor: pointer !important; border-bottom: 1px solid #f0f0f0 !important; }
+      .pac-item:hover { background: #f5f5f5 !important; }
+      .pac-item-selected { background: ${CONFIG.brandColor}08 !important; }
+      .pac-icon { display: none !important; }
+      .pac-item-query { font-size: 15px !important; color: #333 !important; }
+    `;
+
+    // ============================================================
+    // SHARED COMPONENTS
+    // ============================================================
+    function Av() { return <div className="av-sec"><div className="av-circ">{CONFIG.avatarUrl ? <img src={CONFIG.avatarUrl} alt="" /> : "\u{1F469}"}</div></div>; }
+    function Bk({ onClick }) { return <div className="nav-r"><button className="bk-btn" onClick={onClick}>{"\u2190"}</button></div>; }
+    function Ht({ text }) { return <div className="ht"><div className="has">{CONFIG.avatarUrl ? <img src={CONFIG.avatarUrl} alt="" /> : "\u{1F469}"}</div><div className="htx">{text}</div></div>; }
+    function Ii({ tooltip }) { return <span className="tw"><span className="ii">?</span><span className="tp">{tooltip}</span></span>; }
+
+    // ============================================================
+    // WIZARD STEPS
+    // ============================================================
+    function S1({ data, onChange, onNext }) {
+      const fmt = (v) => { const d = v.replace(/\D/g, "").slice(0, 10); if (d.length <= 3) return d; if (d.length <= 6) return `(${d.slice(0,3)}) ${d.slice(3)}`; return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`; };
+      const nOk = data.fullName?.trim().length > 0;
+      const pOk = (data.phone || "").replace(/\D/g, "").length === 10;
+      return (<div className="sc" key="s1"><Av /><h1 className="st">I'll get you some great options in a minute. Ready to go?</h1>
+        <div className="ir"><input className="inf" placeholder="Full Name*" value={data.fullName || ""} onChange={(e) => onChange({ ...data, fullName: e.target.value })} onKeyDown={(e) => e.key === "Enter" && nOk && pOk && onNext()} /><input className="inf" placeholder="Phone Number*" value={data.phone || ""} onChange={(e) => onChange({ ...data, phone: fmt(e.target.value) })} onKeyDown={(e) => e.key === "Enter" && nOk && pOk && onNext()} /></div>
+        <button className="bp" disabled={!nOk || !pOk} onClick={onNext}>Next</button><div style={{ flex: 1 }} /><Ht text="We ask for your phone number so our technicians can contact you if we see any issues with setting up your new system." /></div>);
+    }
+
+    function S2({ data, onChange, onNext }) {
+      const inputRef = React.useRef(null);
+      const autocompleteRef = React.useRef(null);
+      const fn = (data.fullName || "").split(" ")[0] || "there";
+
+      useEffect(() => {
+        if (!inputRef.current || autocompleteRef.current) return;
+        if (!window.google?.maps?.places) return;
+        const ac = new window.google.maps.places.Autocomplete(inputRef.current, {
+          types: ["address"],
+          componentRestrictions: { country: "us" },
+          fields: ["formatted_address", "address_components", "geometry"],
+        });
+        ac.addListener("place_changed", () => {
+          const place = ac.getPlace();
+          if (place?.formatted_address) {
+            onChange((prev) => ({ ...prev, address: place.formatted_address, addressConfirmed: true, addressComponents: place.address_components }));
+          }
+        });
+        autocompleteRef.current = ac;
+      }, []);
+
+      const handleType = (v) => { onChange({ ...data, address: v, addressConfirmed: false }); };
+
+      return (<div className="sc" key="s2"><Av /><h1 className="st">Great to meet you {fn}! Where's your home located?</h1>
+        {data.addressConfirmed && <div className="mp">{"\u{1F4CD}"}</div>}
+        <div className="aw"><div className="ar"><input ref={inputRef} className="inf" style={{ flex: 1 }} placeholder="Street Address, City, State/Province*" value={data.address || ""} onChange={(e) => handleType(e.target.value)} /><input className="inf sm" placeholder="Apt/Unit#" value={data.unit || ""} onChange={(e) => onChange({ ...data, unit: e.target.value })} /></div></div>
+        <div style={{ marginTop: 24 }}><button className="bp" disabled={!data.addressConfirmed} onClick={onNext}>Next</button></div></div>);
+    }
+
+    function S3({ data, onChange, onNext }) {
+      return (<div className="sc" key="s3"><Av /><h1 className="st">What kind of system are you interested in today?</h1>
+        <div className="opr">{SYSTEM_TYPES.map((o) => <div key={o.id} className={`oc ${data.systemType === o.id ? "sel" : ""}`} onClick={() => onChange({ ...data, systemType: o.id })}><div className="oi">{o.icon}</div><div className="ol">{o.label}</div><div className="orad" /></div>)}</div>
+        <button className="bp" disabled={!data.systemType} onClick={onNext}>Next</button></div>);
+    }
+
+    function S4({ data, onChange, onNext }) {
+      const opts = [{ id: "small_mid", label: "Small-Mid (0\u20131,400 sq.ft.)" }, { id: "medium", label: "Medium (1,400\u20131,800 sq.ft.)" }, { id: "mid_large", label: "Mid-Large (1,800\u20132,400 sq.ft.)" }, { id: "large", label: "Large (2,400+ sq.ft.)" }];
+      return (<div className="sc" key="s4"><Av /><h1 className="st">Approx. Area Served By This System</h1>
+        <div className="lo">{opts.map((o) => <div key={o.id} className={`li ${data.homeSize === o.id ? "sel" : ""}`} onClick={() => onChange({ ...data, homeSize: o.id })}><div className="orad" /><div className="lil">{o.label}</div></div>)}</div>
+        <div className="br"><button className="bp" disabled={!data.homeSize} onClick={onNext}>Next</button><button className="bs" onClick={() => { onChange({ ...data, homeSize: "medium" }); onNext(); }}>I Don't Know</button></div></div>);
+    }
+
+    function S5({ data, onChange, onNext }) {
+      const opts = [{ id: "basement", label: "Basement", icon: "\u{1FA9C}" }, { id: "crawlspace", label: "Crawlspace", icon: "\u{1F6AA}" }, { id: "garage", label: "Garage", icon: "\u{1F3E0}" }, { id: "attic", label: "Attic", icon: "\u{1F53A}" }, { id: "closet", label: "Closet", icon: "\u{1F6AA}" }, { id: "wall_mounted", label: "Wall Mounted", icon: "\u{1F4E6}" }, { id: "packaged_unit", label: "Packaged Unit", icon: "\u{1F3D8}\u{FE0F}" }];
+      return (<div className="sc" key="s5"><Av /><h1 className="st">Where is your indoor unit located?</h1>
+        <div className="opr">{opts.map((o) => <div key={o.id} className={`oc ${data.unitLocation === o.id ? "sel" : ""}`} onClick={() => onChange({ ...data, unitLocation: o.id })}><div className="oi">{o.icon}</div><div className="ol">{o.label}</div><div className="orad" /></div>)}</div>
+        <div className="br"><button className="bp" disabled={!data.unitLocation} onClick={onNext}>Next</button><button className="bs" onClick={() => { onChange({ ...data, unitLocation: "unknown" }); onNext(); }}>I Don't Know</button></div></div>);
+    }
+
+    function S6({ data, onChange, onNext }) {
+      const opts = [{ id: "natural_gas", label: "Natural Gas", icon: "\u{1F525}" }, { id: "dual_fuel", label: "Dual Fuel", icon: "\u{1F525}\u{2744}\u{FE0F}" }, { id: "electric", label: "Electric", icon: "\u{26A1}" }, { id: "heat_pump", label: "Heat Pump", icon: "\u{2668}\u{FE0F}" }];
+      const [more, setMore] = useState(false);
+      const vis = more ? opts : opts.slice(0, 2);
+      return (<div className="sc" key="s6"><Av /><h1 className="st">What's your heating system's energy source?</h1>
+        <div className="opr">
+          {vis.map((o) => <div key={o.id} className={`oc ${data.energySource === o.id ? "sel" : ""}`} onClick={() => onChange({ ...data, energySource: o.id })}><div className="oi">{o.icon}</div><div className="ol">{o.label}</div><div className="orad" /></div>)}
+          {!more && <div className="oc" onClick={() => setMore(true)}><div className="oi" style={{ background: "#ddd", color: "#888", fontSize: 28 }}>{"\u{203A}"}</div><div className="ol" style={{ color: CONFIG.accentColor, textDecoration: "underline" }}>More Options</div></div>}
+        </div>
+        <button className="bp" disabled={!data.energySource} onClick={onNext}>Next</button></div>);
+    }
+
+    function S7({ data, onChange, onNext }) {
+      const sysL = {}; SYSTEM_TYPES.forEach(s => sysL[s.id] = s.label);
+      const locL = { basement: "Basement", crawlspace: "Crawlspace", garage: "Garage", attic: "Attic", closet: "Closet", wall_mounted: "Wall Mounted", packaged_unit: "Packaged Unit", unknown: "Not Sure" };
+      const engL = { natural_gas: "Natural Gas", dual_fuel: "Dual Fuel", electric: "Electric", heat_pump: "Heat Pump" };
+      const eOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email || "");
+      return (<div className="sc" key="s7"><Av /><h1 className="st">Does everything look right?</h1>
+        <div className="rc"><div className="rg">
+          <div><div className="ril">Type of System</div><div className="riv">{sysL[data.systemType] || "\u2014"}</div></div>
+          <div><div className="ril">Size</div><div className="riv">{SIZE_LABELS[data.homeSize] || "\u2014"}</div></div>
+          <div><div className="ril">Unit Location</div><div className="riv">{locL[data.unitLocation] || "\u2014"}</div></div>
+          <div><div className="ril">Power Source</div><div className="riv">{engL[data.energySource] || "\u2014"}</div></div>
+        </div></div>
+        <div className="ir"><input className="inf" style={{ maxWidth: 360 }} placeholder="Email Address*" type="email" value={data.email || ""} onChange={(e) => onChange({ ...data, email: e.target.value })} onKeyDown={(e) => e.key === "Enter" && eOk && onNext()} /></div>
+        <button className="bp" disabled={!eOk} onClick={onNext}>Next</button></div>);
+    }
+
+    function S8({ onComplete }) {
+      const [p, setP] = useState(0);
+      const lbl = ["Size", "Efficiency", "Equipment", "Pricing"];
+      useEffect(() => { const t = setInterval(() => setP((v) => { if (v >= 100) { clearInterval(t); return 100; } return v + 2; }), 60); const c = setTimeout(() => onComplete(), 3200); return () => { clearInterval(t); clearTimeout(c); }; }, [onComplete]);
+      return (<div className="sc" key="s8"><Av /><h1 className="st">Analyzing your data, just a sec...</h1><div className="ls"><div className="ll">{lbl[Math.min(Math.floor(p / 25), 3)]}</div><div className="lbc"><div className="lb" style={{ width: `${p}%` }} /></div></div></div>);
+    }
+
+    // ============================================================
+    // RESULTS
+    // ============================================================
+    function S9({ data, onSchedule }) {
+      const cat = EQUIPMENT_CATALOG[data.systemType || "furnace_ac"]?.[data.homeSize || "large"] || EQUIPMENT_CATALOG.furnace_ac.large;
+      const tiers = [{ key: "good", label: "Good", d: cat.good }, { key: "better", label: "Better", d: cat.better }, { key: "best", label: "Best", d: cat.best, hl: true }];
+      return (<div className="sc" key="s9"><Av /><h1 className="st">Results</h1><div className="resg">{tiers.map((t) => <ResCard key={t.key} tier={t} onSchedule={() => onSchedule(t.key)} />)}</div></div>);
+    }
+
+    function ResCard({ tier, onSchedule }) {
+      const [exp, setExp] = useState(false);
+      const d = tier.d;
+      const features = [d.scope && { l: "Scope of Work", v: d.scope }, d.warranty && { l: "Warranty", v: d.warranty }, d.sound && { l: "Sound Level", v: d.sound }, d.comfort && { l: "Comfort Level", v: d.comfort }, d.energy && { l: "Energy Bills", v: d.energy }].filter(Boolean);
+      return (
+        <div className={`resc ${tier.hl ? "hl" : ""}`}>
+          <div className="tl">{tier.label}</div>
+          {d.imageUrl ? <img className="eq-img" src={d.imageUrl} alt={d.name} /> : <div className="eq-icon">{"\u{1F3E0}"}</div>}
+          <div className="en">{d.name}</div>
+          {d.stage && <div className="es">{d.stage}</div>}
+          {CONFIG.showMonthlyPrice && <><div className="pl">Monthly Price:</div><div className="pv">as low as ${d.monthlyPrice.toFixed(2)}<span>/mo</span>{" "}<Ii tooltip={`${CONFIG.financingTermMonths} months at ${CONFIG.financingAPR}% APR`} /></div></>}
+          {CONFIG.showCashPrice && <div className="cp">Cash Price: ${d.cashPrice.toLocaleString()}</div>}
+          <div className="sl">
+            {d.seer2 !== "N/A" && <div className="sr"><div className="slbl">SEER2 <Ii tooltip="Seasonal Energy Efficiency Ratio" /></div><div className="sval">{d.seer2}</div></div>}
+            {d.hspf2 !== "N/A" && <div className="sr"><div className="slbl">HSPF2 <Ii tooltip="Heating Seasonal Performance Factor" /></div><div className="sval">{d.hspf2}</div></div>}
+            {d.afue !== "N/A" && <div className="sr"><div className="slbl">AFUE <Ii tooltip="Annual Fuel Utilization Efficiency" /></div><div className="sval">{d.afue}</div></div>}
+          </div>
+          {features.length > 0 && <><button className="sat" onClick={() => setExp(!exp)}>{exp ? "See Less" : "See All"}</button>
+            {exp && <div className="sl" style={{ marginTop: 0 }}>{features.map((f, i) => <div key={i} className="fr"><div className="flbl">{f.l}</div><div className="fval">{f.v}</div></div>)}</div>}</>}
+          <button className="sbtn" onClick={onSchedule}>Schedule a Home Visit</button>
+          <div className="cnote">*We can talk about customizing your system during your home visit</div>
+        </div>
+      );
+    }
+
+    // ============================================================
+    // LIVE CALENDAR
+    // ============================================================
+    function S10({ data, onChange, onNext, bk }) {
+      const [avail, setAvail] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+      const [cm, setCm] = useState(new Date().getMonth());
+      const [cy, setCy] = useState(new Date().getFullYear());
+
+      useEffect(() => {
+        if (!bk?.sessionId) return;
+        let off = false; setLoading(true); setError(null);
+        bookingGet("/availability", { sessionId: bk.sessionId, tag: "sales tech", days: "14" })
+          .then((r) => { if (off) return; setAvail(r); setLoading(false); if (r.availableDays?.length > 0) { const f = new Date(r.availableDays[0].date + "T12:00:00"); setCm(f.getMonth()); setCy(f.getFullYear()); } })
+          .catch((e) => { if (off) return; setLoading(false); setError(e.message || "Failed to load availability"); });
+        return () => { off = true; };
+      }, [bk?.sessionId]);
+
+      if (loading) return (<div className="sc" key="cl"><Av /><h1 className="st">Finding available times...</h1><div style={{ padding: 40 }}><div className="spn" /></div><Ht text="We're checking our real-time schedule to find the best available times for your home visit." /></div>);
+      if (error) return (<div className="sc" key="ce"><Av /><h1 className="st">Oops, something went wrong</h1><div className="eb">{error}</div><p style={{ fontSize: 15, color: "#666", marginBottom: 16 }}>Please call us at {CONFIG.companyPhone} to schedule your visit.</p><button className="bp" onClick={() => { setLoading(true); setError(null); bookingGet("/availability", { sessionId: bk.sessionId, tag: "sales tech", days: "14" }).then(r => { setAvail(r); setLoading(false); }).catch(e => { setError(e.message); setLoading(false); }); }}>Try Again</button></div>);
+
+      const ad = avail?.availableDays || [];
+      const adSet = new Set(ad.map((d) => d.date));
+      const today = new Date();
+      const todayStr = today.toISOString().split("T")[0];
+      const dim = new Date(cy, cm + 1, 0).getDate();
+      const fdow = new Date(cy, cm, 1).getDay();
+      const mName = new Date(cy, cm, 1).toLocaleString("en-US", { month: "long", year: "numeric" });
+      const cells = [];
+      for (let i = 0; i < fdow; i++) cells.push(null);
+      for (let d = 1; d <= dim; d++) cells.push(d);
+      const canP = cm > today.getMonth() || cy > today.getFullYear();
+      const mx = new Date(); mx.setDate(mx.getDate() + 21);
+      const canN = new Date(cy, cm + 1, 1) <= mx;
+      const selDay = ad.find((d) => d.date === data.selectedDate);
+      const uSlots = [];
+      if (selDay?.slots) { const seen = new Set(); for (const s of selDay.slots) { if (!seen.has(s.start)) { seen.add(s.start); uSlots.push(s); } } uSlots.sort((a, b) => new Date(a.start) - new Date(b.start)); }
+      const fmtSlot = (s) => { try { const st = new Date(s.start); const en = new Date(s.end); const f = (d) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "America/Denver" }); return `${f(st)} - ${f(en)}`; } catch { return s.formatted || "Time slot"; } };
+
+      return (<div className="sc" key="ca"><Av /><h1 className="st">Pick a day and time that works for you.</h1>
+        <div className="cc">
+          <div className="ch"><button className="cn" disabled={!canP} onClick={() => { let m = cm - 1, y = cy; if (m < 0) { m = 11; y--; } setCm(m); setCy(y); }}>{"\u2039"}</button><div className="ct">{mName}</div><button className="cn" disabled={!canN} onClick={() => { let m = cm + 1, y = cy; if (m > 11) { m = 0; y++; } setCm(m); setCy(y); }}>{"\u203A"}</button></div>
+          <div className="cg">
+            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => <div key={d} className="cdw">{d}</div>)}
+            {cells.map((d, i) => {
+              if (d === null) return <div key={`e${i}`} className="cd emp" />;
+              const ds = `${cy}-${String(cm + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+              const ip = ds < todayStr; const ia = adSet.has(ds); const is = data.selectedDate === ds;
+              let c = "cd"; if (ip) c += " pst"; else if (is) c += " seld"; else if (ia) c += " avl";
+              return <button key={ds} className={c} disabled={!ia} onClick={() => ia && onChange({ ...data, selectedDate: ds, selectedSlot: null })}>{d}</button>;
+            })}
+          </div>
+          {data.selectedDate && uSlots.length > 0 && <div className="sls"><div className="slt">Available times for {selDay?.displayDate || data.selectedDate}</div><div className="slg">{uSlots.map((s, i) => <button key={i} className={`slb ${data.selectedSlot?.start === s.start ? "seld" : ""}`} onClick={() => onChange({ ...data, selectedSlot: s })}>{fmtSlot(s)}</button>)}</div></div>}
+          {data.selectedDate && uSlots.length === 0 && <div className="sls"><div className="slt" style={{ color: "#999" }}>No time slots available for this date.</div></div>}
+        </div>
+        <button className="bp" disabled={!data.selectedSlot} onClick={onNext}>Next</button></div>);
+    }
+
+    // ============================================================
+    // CONFIRM BOOKING
+    // ============================================================
+    function S11({ data, selectedTier, bk, onConfirmed, onError }) {
+      const [busy, setBusy] = useState(false);
+      const cat = EQUIPMENT_CATALOG[data.systemType || "furnace_ac"]?.[data.homeSize || "large"] || EQUIPMENT_CATALOG.furnace_ac.large;
+      const eq = cat[selectedTier] || cat.good;
+      const sysLabel = {}; SYSTEM_TYPES.forEach(s => sysLabel[s.id] = s.label);
+      const slotLbl = (() => { if (!data.selectedSlot) return "Not selected"; try { const st = new Date(data.selectedSlot.start); return st.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "America/Denver" }) + " at " + st.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "America/Denver" }); } catch { return data.selectedSlot.formatted || "Selected"; } })();
+
+      const confirm = async () => {
+        setBusy(true);
+        try {
+          await bookingPost("/update-session", { sessionId: bk.sessionId, updates: {
+            serviceType: "estimate", customerType: bk.customerFound ? "existing" : "new", systemAge: "10+",
+            name: data.fullName, phone: (data.phone || "").replace(/\D/g, ""), email: data.email,
+            address: data.address ? { street: data.address.split(",")[0]?.trim() || data.address, city: data.address.split(",")[1]?.trim() || "", state: data.address.split(",")[2]?.trim()?.split(" ")[0] || "CO", zip: data.address.split(",")[2]?.trim()?.split(" ")[1] || "" } : null,
+            selectedDate: data.selectedDate, selectedSlot: data.selectedSlot,
+            issue: [`[Online Quote] New system estimate`, `Equipment: ${eq.name} (${TIER_LABELS[selectedTier]} tier)`, `Stage: ${eq.stage || "N/A"}`, `Quoted Monthly: $${eq.monthlyPrice.toFixed(2)}/mo (${CONFIG.financingTermMonths}mo @ ${CONFIG.financingAPR}%)`, eq.seer2 !== "N/A" ? `SEER2: ${eq.seer2}` : null, eq.hspf2 !== "N/A" ? `HSPF2: ${eq.hspf2}` : null, eq.afue !== "N/A" ? `AFUE: ${eq.afue}` : null, `Home Size: ${SIZE_LABELS[data.homeSize] || data.homeSize}`, `System Type: ${sysLabel[data.systemType] || data.systemType}`, `Address: ${data.address || "Not provided"}`, `Booked via online quoting wizard`].filter(Boolean).join("\n"),
+          }, step: "confirm" });
+          const result = await bookingPost("/confirm", { sessionId: bk.sessionId });
+          onConfirmed(result);
+        } catch (e) { setBusy(false); onError(e.message || "Failed to confirm booking"); }
+      };
+
+      return (<div className="sc" key="s11"><Av /><h1 className="st">Confirm Your Home Visit</h1>
+        <div className="rc">
+          <div className="cfr"><div className="cfl">Equipment</div><div className="cfv">{eq.name}</div></div>
+          <div className="cfr"><div className="cfl">Tier</div><div className="cfv">{TIER_LABELS[selectedTier]}</div></div>
+          {CONFIG.showMonthlyPrice && <div className="cfr"><div className="cfl">Monthly Price</div><div className="cfv">${eq.monthlyPrice.toFixed(2)}/mo</div></div>}
+          <div className="cfr"><div className="cfl">When</div><div className="cfv">{slotLbl}</div></div>
+          <div className="cfr"><div className="cfl">Name</div><div className="cfv">{data.fullName}</div></div>
+          <div className="cfr"><div className="cfl">Address</div><div className="cfv" style={{ fontSize: 13 }}>{data.address}</div></div>
+        </div>
+        {busy ? <div style={{ display: "flex", alignItems: "center", gap: 12 }}><div className="spn" /><span style={{ color: "#888" }}>Creating your appointment...</span></div> : <button className="bp" onClick={confirm}>Confirm Home Visit</button>}
+        <div style={{ flex: 1 }} /><Ht text="After confirming, a sales tech will visit your home to verify the details and finalize your custom quote." /></div>);
+    }
+
+    // ============================================================
+    // THANK YOU
+    // ============================================================
+    function S12({ data, conf, onReset }) {
+      return (<div className="sc" key="s12"><Av /><h1 className="st">Thank You!</h1>
+        <div className="tys"><div style={{ fontSize: 48, marginBottom: 8 }}>{"\u2705"}</div><p className="tyt">Your home visit has been scheduled.</p>
+          {conf?.confirmation && <div className="rc" style={{ maxWidth: 400 }}><div className="cfr"><div className="cfl">Date</div><div className="cfv">{conf.confirmation.date}</div></div><div className="cfr"><div className="cfl">Time</div><div className="cfv">{conf.confirmation.time}</div></div></div>}
+          <p className="tyt">An email confirmation has been sent to <span className="tye">{data.email || "your email"}</span></p>
+          <p className="tyt" style={{ fontSize: 13, color: "#999" }}>If you have any questions, call us at {CONFIG.companyPhone}</p>
+          <button className="gab" onClick={onReset}>Get Another Quote</button></div></div>);
+    }
+
+    // ============================================================
+    // LEAD CAPTURE — fires when customer sees results
+    // ============================================================
+    async function sendLeadCapture(formData) {
+      try {
+        const sysLabel = {}; SYSTEM_TYPES.forEach(s => sysLabel[s.id] = s.label);
+        const cat = EQUIPMENT_CATALOG[formData.systemType || "furnace_ac"]?.[formData.homeSize || "large"] || EQUIPMENT_CATALOG.furnace_ac.large;
+        await fetch(`${BOOKING_API.replace("/api/booking", "/api/quote-lead")}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tenantId: CONFIG.tenantId,
+            name: formData.fullName,
+            phone: formData.phone,
+            email: formData.email,
+            address: formData.address,
+            unit: formData.unit || "",
+            systemType: sysLabel[formData.systemType] || formData.systemType,
+            homeSize: SIZE_LABELS[formData.homeSize] || formData.homeSize,
+            unitLocation: formData.unitLocation,
+            energySource: formData.energySource,
+            goodMonthly: cat.good?.monthlyPrice,
+            betterMonthly: cat.better?.monthlyPrice,
+            bestMonthly: cat.best?.monthlyPrice,
+            goodName: cat.good?.name,
+            betterName: cat.better?.name,
+            bestName: cat.best?.name,
+            timestamp: new Date().toISOString(),
+          }),
+        });
+      } catch (e) {
+        // Lead capture is fire-and-forget — don't block the wizard
+        console.log("Lead capture error (non-blocking):", e.message);
+      }
+    }
+
+    // ============================================================
+    // MAIN WIZARD
+    // ============================================================
+    function HVACQuoteWizard() {
+      const [step, setStep] = useState(0);
+      const [fd, setFd] = useState({});
+      const [tier, setTier] = useState(null);
+      const [bk, setBk] = useState(null);
+      const [conf, setConf] = useState(null);
+      const [bkErr, setBkErr] = useState(null);
+      const [leadSent, setLeadSent] = useState(false);
+
+      const STEPS = ["lead", "address", "systemType", "homeSize", "unitLocation", "energySource", "review", "loading", "results", "liveCalendar", "confirmBooking", "thankYou"];
+      const goN = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
+      const goB = () => setStep((s) => Math.max(s - 1, 0));
+      const reset = () => { setStep(0); setFd({}); setTier(null); setBk(null); setConf(null); setBkErr(null); setLeadSent(false); };
+
+      // Send lead capture when the user reaches the results page
+      useEffect(() => {
+        if (STEPS[step] === "results" && !leadSent) {
+          setLeadSent(true);
+          sendLeadCapture(fd);
+        }
+      }, [step, leadSent, fd]);
+
+      const handleSch = useCallback(async (t) => {
+        setTier(t); setBkErr(null);
+        try {
+          const sess = await bookingPost("/start", { tenantId: CONFIG.tenantId });
+          await bookingPost("/update-session", { sessionId: sess.sessionId, updates: { serviceType: "estimate", systemAge: "10+" }, step: "calendar" });
+          const phone = (fd.phone || "").replace(/\D/g, "");
+          let cf = false;
+          if (phone.length === 10) { try { const lu = await bookingPost("/lookup-customer", { sessionId: sess.sessionId, phone }); cf = lu.found || false; } catch {} }
+          setBk({ sessionId: sess.sessionId, customerFound: cf });
+          setStep(9);
+        } catch (e) { setBkErr(e.message || "Failed to start booking"); setStep(9); }
+      }, [fd.phone]);
+
+      // Tell parent iframe to resize when step changes
+      useEffect(() => {
+        const sendHeight = () => {
+          if (window.parent !== window) {
+            window.parent.postMessage({ type: "rox-quote-resize", height: document.body.scrollHeight }, "*");
+          }
+        };
+        sendHeight();
+        const t = setTimeout(sendHeight, 500);
+        return () => clearTimeout(t);
+      }, [step]);
+
+      const render = () => {
+        switch (STEPS[step]) {
+          case "lead": return <S1 data={fd} onChange={setFd} onNext={goN} />;
+          case "address": return <S2 data={fd} onChange={setFd} onNext={goN} />;
+          case "systemType": return <S3 data={fd} onChange={setFd} onNext={goN} />;
+          case "homeSize": return <S4 data={fd} onChange={setFd} onNext={goN} />;
+          case "unitLocation": return <S5 data={fd} onChange={setFd} onNext={goN} />;
+          case "energySource": return <S6 data={fd} onChange={setFd} onNext={goN} />;
+          case "review": return <S7 data={fd} onChange={setFd} onNext={goN} />;
+          case "loading": return <S8 onComplete={goN} />;
+          case "results": return <S9 data={fd} onSchedule={handleSch} />;
+          case "liveCalendar": return <S10 data={fd} onChange={setFd} onNext={goN} bk={bk} />;
+          case "confirmBooking": return <S11 data={fd} selectedTier={tier} bk={bk} onConfirmed={(r) => { setConf(r); setStep(11); }} onError={(e) => setBkErr(e)} />;
+          case "thankYou": return <S12 data={fd} conf={conf} onReset={reset} />;
+          default: return null;
+        }
+      };
+
+      const showBk = step > 0 && !["lead", "loading", "thankYou"].includes(STEPS[step]);
+
+      return (<><style>{wzStyles}</style>
+        <div className="wz">
+          <div className="hdr">
+            {CONFIG.logoUrl ? <img className="hdr-logo" src={CONFIG.logoUrl} alt={CONFIG.companyName} /> : <div style={{ fontWeight: 700, fontSize: 18 }}>{CONFIG.companyName}</div>}
+            <div className="hdr-acts"><button className="hdr-btn" onClick={reset} title="Start Over">{"\u21BA"}</button><button className="hdr-btn" title="Help">?</button><button className="hdr-btn" title="Close">{"\u2715"}</button></div>
+          </div>
+          {showBk && <Bk onClick={goB} />}
+          {bkErr && STEPS[step] !== "liveCalendar" && <div className="eb" style={{ margin: "0 24px 12px" }}>{bkErr}</div>}
+          {render()}
+          <div className="wf"><div className="ft">Breathe Easy! After you finish this journey, select your system, and complete the checkout process, a member of our team will contact you to schedule a visit to your home to confirm the job details. If any adjustments are needed due to special circumstances in your home, we will let you know up front and work out the details before we proceed with the job.</div></div>
+        </div></>);
+    }
+
+    // ============================================================
+    // MOUNT
+    // ============================================================
+    const root = ReactDOM.createRoot(document.getElementById("rox-quote-wizard"));
+    root.render(<HVACQuoteWizard />);
+  </script>
+</body>
+</html>
