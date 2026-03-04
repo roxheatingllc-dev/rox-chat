@@ -12,7 +12,7 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA2bAqk6S5LGpJTDhWoQ8vZQ9h-uTLnT-w&libraries=places&loading=async"></script>
+  <!-- Google Maps API loaded dynamically from server — no API key in source code -->
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { height: 100%; }
@@ -41,6 +41,43 @@
     const { useState, useEffect, useCallback } = React;
 
     const BOOKING_API = "https://rox-chat-production.up.railway.app/api/booking";
+    const CONFIG_API = "https://rox-chat-production.up.railway.app/api/widget-config";
+
+    // ============================================================
+    // GOOGLE MAPS DYNAMIC LOADER — key fetched from server, never in source
+    // ============================================================
+    let _mapsReady = false;
+    let _mapsPromise = null;
+
+    function loadGoogleMaps() {
+      if (_mapsPromise) return _mapsPromise;
+      _mapsPromise = (async () => {
+        // If already loaded (e.g., from cache), skip
+        if (window.google?.maps?.places) { _mapsReady = true; return true; }
+        try {
+          const res = await fetch(`${CONFIG_API}/maps-key`);
+          if (!res.ok) throw new Error("Failed to fetch Maps config");
+          const { key } = await res.json();
+          if (!key) throw new Error("No API key returned");
+          return new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places&loading=async`;
+            script.async = true;
+            script.onload = () => { _mapsReady = true; resolve(true); };
+            script.onerror = () => reject(new Error("Google Maps script failed to load"));
+            document.head.appendChild(script);
+          });
+        } catch (e) {
+          console.warn("Google Maps load failed:", e.message);
+          _mapsReady = false;
+          return false;
+        }
+      })();
+      return _mapsPromise;
+    }
+
+    // Pre-warm: start loading Maps API immediately (non-blocking)
+    loadGoogleMaps();
 
     // ============================================================
     // COMPANY SETTINGS
@@ -340,30 +377,44 @@
     function S2({ data, onChange, onNext }) {
       const inputRef = React.useRef(null);
       const autocompleteRef = React.useRef(null);
+      const [mapsLoaded, setMapsLoaded] = useState(!!window.google?.maps?.places);
       const fn = (data.fullName || "").split(" ")[0] || "there";
 
+      // Wait for Google Maps API to load, then init autocomplete
       useEffect(() => {
-        if (!inputRef.current || autocompleteRef.current) return;
-        if (!window.google?.maps?.places) return;
-        const ac = new window.google.maps.places.Autocomplete(inputRef.current, {
-          types: ["address"],
-          componentRestrictions: { country: "us" },
-          fields: ["formatted_address", "address_components", "geometry"],
-        });
-        ac.addListener("place_changed", () => {
-          const place = ac.getPlace();
-          if (place?.formatted_address) {
-            onChange((prev) => ({ ...prev, address: place.formatted_address, addressConfirmed: true, addressComponents: place.address_components }));
+        let cancelled = false;
+        if (autocompleteRef.current) return; // Already initialized
+
+        const init = async () => {
+          if (!window.google?.maps?.places) {
+            const ok = await loadGoogleMaps();
+            if (cancelled || !ok) return;
           }
-        });
-        autocompleteRef.current = ac;
-      }, []);
+          if (!cancelled) setMapsLoaded(true);
+          if (!inputRef.current || autocompleteRef.current || cancelled) return;
+          const ac = new window.google.maps.places.Autocomplete(inputRef.current, {
+            types: ["address"],
+            componentRestrictions: { country: "us" },
+            fields: ["formatted_address", "address_components", "geometry"],
+          });
+          ac.addListener("place_changed", () => {
+            const place = ac.getPlace();
+            if (place?.formatted_address) {
+              onChange((prev) => ({ ...prev, address: place.formatted_address, addressConfirmed: true, addressComponents: place.address_components }));
+            }
+          });
+          autocompleteRef.current = ac;
+        };
+        init();
+        return () => { cancelled = true; };
+      }, [mapsLoaded]);
 
       const handleType = (v) => { onChange({ ...data, address: v, addressConfirmed: false }); };
 
       return (<div className="sc" key="s2"><Av /><h1 className="st">Great to meet you {fn}! Where's your home located?</h1>
         {data.addressConfirmed && <div className="mp">{"\u{1F4CD}"}</div>}
-        <div className="aw"><div className="ar"><input ref={inputRef} className="inf" style={{ flex: 1 }} placeholder="Street Address, City, State/Province*" value={data.address || ""} onChange={(e) => handleType(e.target.value)} /><input className="inf sm" placeholder="Apt/Unit#" value={data.unit || ""} onChange={(e) => onChange({ ...data, unit: e.target.value })} /></div></div>
+        <div className="aw"><div className="ar"><input ref={inputRef} className="inf" style={{ flex: 1 }} placeholder="Street Address, City, State/Province*" value={data.address || ""} onChange={(e) => handleType(e.target.value)} autoComplete="off" /><input className="inf sm" placeholder="Apt/Unit#" value={data.unit || ""} onChange={(e) => onChange({ ...data, unit: e.target.value })} /></div></div>
+        {!mapsLoaded && <div style={{ fontSize: 13, color: "#999", marginTop: 8 }}>Loading address lookup...</div>}
         <div style={{ marginTop: 24 }}><button className="bp" disabled={!data.addressConfirmed} onClick={onNext}>Next</button></div></div>);
     }
 
