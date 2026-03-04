@@ -700,8 +700,8 @@
           let cf = false;
           if (phone.length === 10) { try { const lu = await bookingPost("/lookup-customer", { sessionId: sess.sessionId, phone }); cf = lu.found || false; } catch {} }
           setBk({ sessionId: sess.sessionId, customerFound: cf });
-          setStep(9);
-        } catch (e) { setBkErr(e.message || "Failed to start booking"); setStep(9); }
+          setStep(8);
+        } catch (e) { setBkErr(e.message || "Failed to start booking"); setStep(8); }
       }, [fd.phone]);
 
       // Tell parent iframe to resize when step changes
