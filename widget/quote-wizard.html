@@ -12,7 +12,6 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA2bAqk6S5LGpJTDhWoQ8vZQ9h-uTLnT-w&libraries=places" onerror="window.__gmapsFailed=true"></script>
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { height: 100%; }
@@ -24,8 +23,7 @@
     @keyframes wzspin { to { transform: rotate(360deg); } }
     .wz-loading-text { font-size: 15px; color: #888; font-weight: 500; }
     /* Suppress Google Maps error banners */
-    .gm-err-container, .gm-err-title, .gm-err-message, .gm-err-autocomplete,
-    div[style*="background-color: rgb(229, 227, 223)"] { display: none !important; }
+    .gm-err-container, .gm-err-title, .gm-err-message, .gm-err-autocomplete { display: none !important; }
     .dismissButton { display: none !important; }
   </style>
 </head>
@@ -342,52 +340,65 @@
     }
 
     function S2({ data, onChange, onNext }) {
-      const inputRef = React.useRef(null);
-      const autocompleteRef = React.useRef(null);
-      const [placesLoaded, setPlacesLoaded] = useState(false);
+      const [suggestions, setSuggestions] = useState([]);
+      const [showSug, setShowSug] = useState(false);
+      const [placesReady, setPlacesReady] = useState(false);
+      const serviceRef = React.useRef(null);
       const fn = (data.fullName || "").split(" ")[0] || "there";
 
+      // Try to load Google Places API dynamically
       useEffect(() => {
-        if (!inputRef.current || autocompleteRef.current) return;
-        // Try to init Google Places — retry a few times in case the script loads slowly
-        let attempts = 0;
-        const tryInit = () => {
-          if (window.google?.maps?.places) {
-            try {
-              const ac = new window.google.maps.places.Autocomplete(inputRef.current, {
-                types: ["address"],
-                componentRestrictions: { country: "us" },
-                fields: ["formatted_address", "address_components", "geometry"],
-              });
-              ac.addListener("place_changed", () => {
-                const place = ac.getPlace();
-                if (place?.formatted_address) {
-                  onChange((prev) => ({ ...prev, address: place.formatted_address, addressConfirmed: true, addressComponents: place.address_components }));
-                }
-              });
-              autocompleteRef.current = ac;
-              setPlacesLoaded(true);
-            } catch (e) { console.log("Google Places init error:", e.message); }
-          } else if (attempts < 10) {
-            attempts++;
-            setTimeout(tryInit, 500);
-          }
+        if (window.google?.maps?.places) {
+          try { serviceRef.current = new window.google.maps.places.AutocompleteService(); setPlacesReady(true); } catch(e) {}
+          return;
+        }
+        // Try loading the script
+        const script = document.createElement("script");
+        script.src = "https://maps.googleapis.com/maps/api/js?key=AIzaSyA2bAqk6S5LGpJTDhWoQ8vZQ9h-uTLnT-w&libraries=places";
+        script.async = true;
+        script.onload = () => {
+          try { serviceRef.current = new window.google.maps.places.AutocompleteService(); setPlacesReady(true); } catch(e) {}
         };
-        tryInit();
+        script.onerror = () => { /* Google Places unavailable — manual entry works fine */ };
+        document.head.appendChild(script);
       }, []);
 
-      const handleType = (v) => { onChange({ ...data, address: v, addressConfirmed: false }); };
-      // Allow manual confirm if Google Places isn't working — need at least 10 chars (basic address)
-      const canManualConfirm = !placesLoaded && (data.address || "").trim().length >= 10;
-      const manualConfirm = () => { onChange({ ...data, addressConfirmed: true }); };
+      const handleType = (v) => {
+        onChange({ ...data, address: v, addressConfirmed: false });
+        if (serviceRef.current && v.length >= 3) {
+          serviceRef.current.getPlacePredictions(
+            { input: v, types: ["address"], componentRestrictions: { country: "us" } },
+            (results) => { if (results) { setSuggestions(results.map(r => r.description)); setShowSug(true); } }
+          );
+        } else { setSuggestions([]); setShowSug(false); }
+      };
+
+      const selectSug = (addr) => { onChange({ ...data, address: addr, addressConfirmed: true }); setSuggestions([]); setShowSug(false); };
+      const addrLen = (data.address || "").trim().length;
 
       return (<div className="sc" key="s2"><Av /><h1 className="st">Great to meet you {fn}! Where's your home located?</h1>
         {data.addressConfirmed && <div className="mp">{"\u{1F4CD}"}</div>}
-        <div className="aw"><div className="ar"><input ref={inputRef} className="inf" style={{ flex: 1 }} placeholder="Street Address, City, State*" value={data.address || ""} onChange={(e) => handleType(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && canManualConfirm) manualConfirm(); }} /><input className="inf sm" placeholder="Apt/Unit#" value={data.unit || ""} onChange={(e) => onChange({ ...data, unit: e.target.value })} /></div></div>
+        <div className="aw">
+          <div className="ar">
+            <input className="inf" style={{ flex: 1 }} placeholder="Street Address, City, State*" value={data.address || ""}
+              onChange={(e) => handleType(e.target.value)}
+              onFocus={() => suggestions.length > 0 && setShowSug(true)}
+              onKeyDown={(e) => { if (e.key === "Enter" && addrLen >= 10) { onChange({ ...data, addressConfirmed: true }); setShowSug(false); } }}
+            />
+            <input className="inf sm" placeholder="Apt/Unit#" value={data.unit || ""} onChange={(e) => onChange({ ...data, unit: e.target.value })} />
+          </div>
+          {showSug && suggestions.length > 0 && (
+            <div className="acd">{suggestions.map((s, i) =>
+              <div key={i} className="aci" onMouseDown={() => selectSug(s)}>{s}</div>
+            )}</div>
+          )}
+        </div>
         <div style={{ marginTop: 24, display: "flex", gap: 12, alignItems: "center" }}>
-          {canManualConfirm && !data.addressConfirmed && <button className="bs" onClick={manualConfirm}>Confirm Address</button>}
+          {addrLen >= 10 && !data.addressConfirmed && <button className="bs" onClick={() => { onChange({ ...data, addressConfirmed: true }); setShowSug(false); }}>Confirm Address</button>}
           <button className="bp" disabled={!data.addressConfirmed} onClick={onNext}>Next</button>
-        </div></div>);
+        </div>
+        {!placesReady && <Ht text="Type your full address including city and state, then click Confirm Address." />}
+      </div>);
     }
 
     function S3({ data, onChange, onNext }) {
