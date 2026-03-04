@@ -340,7 +340,24 @@
       .ii { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: ${CONFIG.accentColor}; color: white; font-size: 11px; font-weight: 700; margin-left: 4px; cursor: help; vertical-align: middle; }
       .tw { position: relative; display: inline-flex; }
       .tw:hover .tp { opacity: 1; visibility: visible; }
-      .tp { position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; white-space: nowrap; opacity: 0; visibility: hidden; transition: all 0.2s; pointer-events: none; z-index: 10; }
+      .tp { position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 10px 14px; border-radius: 8px; font-size: 12px; white-space: normal; width: 220px; text-align: center; line-height: 1.4; opacity: 0; visibility: hidden; transition: all 0.2s; pointer-events: none; z-index: 10; }
+      .hf-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.2s ease; }
+      @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+      .hf-modal { background: white; border-radius: 16px; padding: 32px 28px; max-width: 420px; width: 90%; position: relative; box-shadow: 0 20px 60px rgba(0,0,0,0.15); animation: slideUp 0.25s ease; display: flex; flex-direction: column; gap: 12px; }
+      @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+      .hf-close { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; border: none; background: transparent; font-size: 20px; color: #999; cursor: pointer; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+      .hf-close:hover { background: #f0f0f0; color: #333; }
+      .hf-title { font-size: 20px; font-weight: 700; color: #222; text-align: center; margin: 0; }
+      .hf-sub { font-size: 14px; color: #888; text-align: center; margin: 0 0 4px; line-height: 1.4; }
+      .hf-input { padding: 14px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 15px; font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.2s; width: 100%; }
+      .hf-input:focus { border-color: ${CONFIG.brandColor}; }
+      .hf-input::placeholder { color: #aaa; }
+      .hf-textarea { padding: 14px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 15px; font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.2s; width: 100%; min-height: 90px; resize: vertical; }
+      .hf-textarea:focus { border-color: ${CONFIG.brandColor}; }
+      .hf-textarea::placeholder { color: #aaa; }
+      .hf-submit { padding: 14px 24px; background: #333; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: 'DM Sans', sans-serif; width: 100%; }
+      .hf-submit:hover { background: #222; }
+      .hf-submit:disabled { background: #ccc; cursor: not-allowed; }
       .cfr { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
       .cfr:last-child { border-bottom: none; }
       .cfl { font-size: 13px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -492,7 +509,7 @@
           {d.imageUrl ? <img className="eq-img" src={d.imageUrl} alt={d.name} /> : <div className="eq-icon">{"\u{1F3E0}"}</div>}
           <div className="en">{d.name}</div>
           {d.stage && <div className="es">{d.stage}</div>}
-          {CONFIG.showMonthlyPrice && <><div className="pl">Monthly Price:</div><div className="pv">as low as ${d.monthlyPrice.toFixed(2)}<span>/mo</span>{" "}<Ii tooltip={`${CONFIG.financingTermMonths} months at ${CONFIG.financingAPR}% APR`} /></div></>}
+          {CONFIG.showMonthlyPrice && <><div className="pl">Pay Over Time Price:</div><div className="pv">as low as ${d.monthlyPrice.toFixed(2)}<span>/mo</span>{" "}<Ii tooltip="This quote includes installation labor, equipment, and manufacturer warranty. A site visit is required to verify job and pricing details before this quote is valid." /></div></>}
           {CONFIG.showCashPrice && <div className="cp">Cash Price: ${d.cashPrice.toLocaleString()}</div>}
           <div className="sl">
             {d.seer2 !== "N/A" && <div className="sr"><div className="slbl">SEER2 <Ii tooltip="Seasonal Energy Efficiency Ratio" /></div><div className="sval">{d.seer2}</div></div>}
@@ -653,6 +670,62 @@
     }
 
     // ============================================================
+    // ASK US ANYTHING — Help form from header ? button
+    // ============================================================
+    function HelpForm({ onClose, prefill }) {
+      const [hf, setHf] = useState({ name: prefill?.fullName || "", phone: prefill?.phone || "", email: prefill?.email || "", message: "" });
+      const [sending, setSending] = useState(false);
+      const [sent, setSent] = useState(false);
+
+      const canSend = hf.name.trim().length > 0 && hf.message.trim().length > 0;
+
+      const handleSubmit = async () => {
+        if (!canSend || sending) return;
+        setSending(true);
+        try {
+          await fetch(`${BOOKING_API.replace("/api/booking", "/api/quote-lead")}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              tenantId: CONFIG.tenantId,
+              name: hf.name,
+              phone: hf.phone,
+              email: hf.email,
+              message: hf.message,
+              source: "help_form",
+              timestamp: new Date().toISOString(),
+            }),
+          });
+        } catch (e) { console.log("Help form error (non-blocking):", e.message); }
+        setSending(false);
+        setSent(true);
+      };
+
+      return (
+        <div className="hf-overlay" onClick={onClose}>
+          <div className="hf-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="hf-close" onClick={onClose}>{"\u2715"}</button>
+            {sent ? (
+              <div style={{ textAlign: "center", padding: "24px 0" }}>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>{"\u2705"}</div>
+                <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Thanks!</div>
+                <div style={{ fontSize: 14, color: "#666" }}>We'll get back to you ASAP.</div>
+              </div>
+            ) : (<>
+              <h2 className="hf-title">Ask Us Anything</h2>
+              <p className="hf-sub">Fill in your details, ask your questions, and we'll respond ASAP.</p>
+              <input className="hf-input" placeholder="Full Name" value={hf.name} onChange={(e) => setHf({ ...hf, name: e.target.value })} />
+              <input className="hf-input" placeholder="Phone" value={hf.phone} onChange={(e) => setHf({ ...hf, phone: e.target.value })} />
+              <input className="hf-input" placeholder="Email Address" value={hf.email} onChange={(e) => setHf({ ...hf, email: e.target.value })} />
+              <textarea className="hf-textarea" placeholder="How Can We Help?" value={hf.message} onChange={(e) => setHf({ ...hf, message: e.target.value })} />
+              <button className="hf-submit" disabled={!canSend || sending} onClick={handleSubmit}>{sending ? "Sending..." : "Get Some Help!"}</button>
+            </>)}
+          </div>
+        </div>
+      );
+    }
+
+    // ============================================================
     // MAIN WIZARD
     // ============================================================
     function HVACQuoteWizard() {
@@ -663,6 +736,7 @@
       const [conf, setConf] = useState(null);
       const [bkErr, setBkErr] = useState(null);
       const [leadSent, setLeadSent] = useState(false);
+      const [showHelp, setShowHelp] = useState(false);
 
       const STEPS = ["lead", "address", "systemType", "homeSize", "unitLocation", "energySource", "review", "loading", "results", "liveCalendar", "confirmBooking", "thankYou"];
       const goN = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
@@ -726,8 +800,9 @@
         <div className="wz">
           <div className="hdr">
             {CONFIG.logoUrl ? <img className="hdr-logo" src={CONFIG.logoUrl} alt={CONFIG.companyName} /> : <div style={{ fontWeight: 700, fontSize: 18 }}>{CONFIG.companyName}</div>}
-            <div className="hdr-acts"><button className="hdr-btn" onClick={reset} title="Start Over">{"\u21BA"}</button><button className="hdr-btn" title="Help">?</button><button className="hdr-btn" title="Close">{"\u2715"}</button></div>
+            <div className="hdr-acts"><button className="hdr-btn" onClick={reset} title="Start Over">{"\u21BA"}</button><button className="hdr-btn" onClick={() => setShowHelp(true)} title="Help">?</button><button className="hdr-btn" title="Close">{"\u2715"}</button></div>
           </div>
+          {showHelp && <HelpForm onClose={() => setShowHelp(false)} prefill={fd} />}
           {showBk && <Bk onClick={goB} />}
           {bkErr && STEPS[step] !== "liveCalendar" && <div className="eb" style={{ margin: "0 24px 12px" }}>{bkErr}</div>}
           {render()}

@@ -22,6 +22,7 @@ const chatRoutes = require('./routes/chat-routes');
 const themeRoutes = require('./routes/theme-routes');
 const bookingRoutes = require('./routes/booking-routes');
 const quoteLeadRoute = require('./routes/quote-lead');
+const configRoutes = require('./routes/config-routes');
 
 const app = express();
 const PORT = process.env.CHAT_PORT || process.env.PORT || 3001;
@@ -65,6 +66,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ========================================
 // API ROUTES
 // ========================================
+app.use('/api/widget-config', configRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/themes', themeRoutes);
 app.use('/api/booking', bookingRoutes);
