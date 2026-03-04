@@ -12,7 +12,7 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <!-- Google Maps API loaded dynamically from server — no API key in source code -->
+  <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA2bAqk6S5LGpJTDhWoQ8vZQ9h-uTLnT-w&libraries=places" onerror="window.__gmapsFailed=true"></script>
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { height: 100%; }
@@ -23,6 +23,10 @@
     .wz-loading-spinner { width: 40px; height: 40px; border: 4px solid #e8e8e8; border-top-color: #F28C28; border-radius: 50%; animation: wzspin 0.8s linear infinite; }
     @keyframes wzspin { to { transform: rotate(360deg); } }
     .wz-loading-text { font-size: 15px; color: #888; font-weight: 500; }
+    /* Suppress Google Maps error banners */
+    .gm-err-container, .gm-err-title, .gm-err-message, .gm-err-autocomplete,
+    div[style*="background-color: rgb(229, 227, 223)"] { display: none !important; }
+    .dismissButton { display: none !important; }
   </style>
 </head>
 <body>
@@ -41,43 +45,6 @@
     const { useState, useEffect, useCallback } = React;
 
     const BOOKING_API = "https://rox-chat-production.up.railway.app/api/booking";
-    const CONFIG_API = "https://rox-chat-production.up.railway.app/api/widget-config";
-
-    // ============================================================
-    // GOOGLE MAPS DYNAMIC LOADER — key fetched from server, never in source
-    // ============================================================
-    let _mapsReady = false;
-    let _mapsPromise = null;
-
-    function loadGoogleMaps() {
-      if (_mapsPromise) return _mapsPromise;
-      _mapsPromise = (async () => {
-        // If already loaded (e.g., from cache), skip
-        if (window.google?.maps?.places) { _mapsReady = true; return true; }
-        try {
-          const res = await fetch(`${CONFIG_API}/maps-key`);
-          if (!res.ok) throw new Error("Failed to fetch Maps config");
-          const { key } = await res.json();
-          if (!key) throw new Error("No API key returned");
-          return new Promise((resolve, reject) => {
-            const script = document.createElement("script");
-            script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places&loading=async`;
-            script.async = true;
-            script.onload = () => { _mapsReady = true; resolve(true); };
-            script.onerror = () => reject(new Error("Google Maps script failed to load"));
-            document.head.appendChild(script);
-          });
-        } catch (e) {
-          console.warn("Google Maps load failed:", e.message);
-          _mapsReady = false;
-          return false;
-        }
-      })();
-      return _mapsPromise;
-    }
-
-    // Pre-warm: start loading Maps API immediately (non-blocking)
-    loadGoogleMaps();
 
     // ============================================================
     // COMPANY SETTINGS
@@ -340,24 +307,7 @@
       .ii { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: ${CONFIG.accentColor}; color: white; font-size: 11px; font-weight: 700; margin-left: 4px; cursor: help; vertical-align: middle; }
       .tw { position: relative; display: inline-flex; }
       .tw:hover .tp { opacity: 1; visibility: visible; }
-      .tp { position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 10px 14px; border-radius: 8px; font-size: 12px; white-space: normal; width: 220px; text-align: center; line-height: 1.4; opacity: 0; visibility: hidden; transition: all 0.2s; pointer-events: none; z-index: 10; }
-      .hf-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.2s ease; }
-      @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-      .hf-modal { background: white; border-radius: 16px; padding: 32px 28px; max-width: 420px; width: 90%; position: relative; box-shadow: 0 20px 60px rgba(0,0,0,0.15); animation: slideUp 0.25s ease; display: flex; flex-direction: column; gap: 12px; }
-      @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-      .hf-close { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; border: none; background: transparent; font-size: 20px; color: #999; cursor: pointer; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
-      .hf-close:hover { background: #f0f0f0; color: #333; }
-      .hf-title { font-size: 20px; font-weight: 700; color: #222; text-align: center; margin: 0; }
-      .hf-sub { font-size: 14px; color: #888; text-align: center; margin: 0 0 4px; line-height: 1.4; }
-      .hf-input { padding: 14px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 15px; font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.2s; width: 100%; }
-      .hf-input:focus { border-color: ${CONFIG.brandColor}; }
-      .hf-input::placeholder { color: #aaa; }
-      .hf-textarea { padding: 14px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 15px; font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.2s; width: 100%; min-height: 90px; resize: vertical; }
-      .hf-textarea:focus { border-color: ${CONFIG.brandColor}; }
-      .hf-textarea::placeholder { color: #aaa; }
-      .hf-submit { padding: 14px 24px; background: #333; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: 'DM Sans', sans-serif; width: 100%; }
-      .hf-submit:hover { background: #222; }
-      .hf-submit:disabled { background: #ccc; cursor: not-allowed; }
+      .tp { position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; white-space: nowrap; opacity: 0; visibility: hidden; transition: all 0.2s; pointer-events: none; z-index: 10; }
       .cfr { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
       .cfr:last-child { border-bottom: none; }
       .cfl { font-size: 13px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -394,45 +344,50 @@
     function S2({ data, onChange, onNext }) {
       const inputRef = React.useRef(null);
       const autocompleteRef = React.useRef(null);
-      const [mapsLoaded, setMapsLoaded] = useState(!!window.google?.maps?.places);
+      const [placesLoaded, setPlacesLoaded] = useState(false);
       const fn = (data.fullName || "").split(" ")[0] || "there";
 
-      // Wait for Google Maps API to load, then init autocomplete
       useEffect(() => {
-        let cancelled = false;
-        if (autocompleteRef.current) return; // Already initialized
-
-        const init = async () => {
-          if (!window.google?.maps?.places) {
-            const ok = await loadGoogleMaps();
-            if (cancelled || !ok) return;
+        if (!inputRef.current || autocompleteRef.current) return;
+        // Try to init Google Places — retry a few times in case the script loads slowly
+        let attempts = 0;
+        const tryInit = () => {
+          if (window.google?.maps?.places) {
+            try {
+              const ac = new window.google.maps.places.Autocomplete(inputRef.current, {
+                types: ["address"],
+                componentRestrictions: { country: "us" },
+                fields: ["formatted_address", "address_components", "geometry"],
+              });
+              ac.addListener("place_changed", () => {
+                const place = ac.getPlace();
+                if (place?.formatted_address) {
+                  onChange((prev) => ({ ...prev, address: place.formatted_address, addressConfirmed: true, addressComponents: place.address_components }));
+                }
+              });
+              autocompleteRef.current = ac;
+              setPlacesLoaded(true);
+            } catch (e) { console.log("Google Places init error:", e.message); }
+          } else if (attempts < 10) {
+            attempts++;
+            setTimeout(tryInit, 500);
           }
-          if (!cancelled) setMapsLoaded(true);
-          if (!inputRef.current || autocompleteRef.current || cancelled) return;
-          const ac = new window.google.maps.places.Autocomplete(inputRef.current, {
-            types: ["address"],
-            componentRestrictions: { country: "us" },
-            fields: ["formatted_address", "address_components", "geometry"],
-          });
-          ac.addListener("place_changed", () => {
-            const place = ac.getPlace();
-            if (place?.formatted_address) {
-              onChange((prev) => ({ ...prev, address: place.formatted_address, addressConfirmed: true, addressComponents: place.address_components }));
-            }
-          });
-          autocompleteRef.current = ac;
         };
-        init();
-        return () => { cancelled = true; };
-      }, [mapsLoaded]);
+        tryInit();
+      }, []);
 
       const handleType = (v) => { onChange({ ...data, address: v, addressConfirmed: false }); };
+      // Allow manual confirm if Google Places isn't working — need at least 10 chars (basic address)
+      const canManualConfirm = !placesLoaded && (data.address || "").trim().length >= 10;
+      const manualConfirm = () => { onChange({ ...data, addressConfirmed: true }); };
 
       return (<div className="sc" key="s2"><Av /><h1 className="st">Great to meet you {fn}! Where's your home located?</h1>
         {data.addressConfirmed && <div className="mp">{"\u{1F4CD}"}</div>}
-        <div className="aw"><div className="ar"><input ref={inputRef} className="inf" style={{ flex: 1 }} placeholder="Street Address, City, State/Province*" value={data.address || ""} onChange={(e) => handleType(e.target.value)} autoComplete="off" /><input className="inf sm" placeholder="Apt/Unit#" value={data.unit || ""} onChange={(e) => onChange({ ...data, unit: e.target.value })} /></div></div>
-        {!mapsLoaded && <div style={{ fontSize: 13, color: "#999", marginTop: 8 }}>Loading address lookup...</div>}
-        <div style={{ marginTop: 24 }}><button className="bp" disabled={!data.addressConfirmed} onClick={onNext}>Next</button></div></div>);
+        <div className="aw"><div className="ar"><input ref={inputRef} className="inf" style={{ flex: 1 }} placeholder="Street Address, City, State*" value={data.address || ""} onChange={(e) => handleType(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && canManualConfirm) manualConfirm(); }} /><input className="inf sm" placeholder="Apt/Unit#" value={data.unit || ""} onChange={(e) => onChange({ ...data, unit: e.target.value })} /></div></div>
+        <div style={{ marginTop: 24, display: "flex", gap: 12, alignItems: "center" }}>
+          {canManualConfirm && !data.addressConfirmed && <button className="bs" onClick={manualConfirm}>Confirm Address</button>}
+          <button className="bp" disabled={!data.addressConfirmed} onClick={onNext}>Next</button>
+        </div></div>);
     }
 
     function S3({ data, onChange, onNext }) {
@@ -509,7 +464,7 @@
           {d.imageUrl ? <img className="eq-img" src={d.imageUrl} alt={d.name} /> : <div className="eq-icon">{"\u{1F3E0}"}</div>}
           <div className="en">{d.name}</div>
           {d.stage && <div className="es">{d.stage}</div>}
-          {CONFIG.showMonthlyPrice && <><div className="pl">Pay Over Time Price:</div><div className="pv">as low as ${d.monthlyPrice.toFixed(2)}<span>/mo</span>{" "}<Ii tooltip="This quote includes installation labor, equipment, and manufacturer warranty. A site visit is required to verify job and pricing details before this quote is valid." /></div></>}
+          {CONFIG.showMonthlyPrice && <><div className="pl">Monthly Price:</div><div className="pv">as low as ${d.monthlyPrice.toFixed(2)}<span>/mo</span>{" "}<Ii tooltip={`${CONFIG.financingTermMonths} months at ${CONFIG.financingAPR}% APR`} /></div></>}
           {CONFIG.showCashPrice && <div className="cp">Cash Price: ${d.cashPrice.toLocaleString()}</div>}
           <div className="sl">
             {d.seer2 !== "N/A" && <div className="sr"><div className="slbl">SEER2 <Ii tooltip="Seasonal Energy Efficiency Ratio" /></div><div className="sval">{d.seer2}</div></div>}
@@ -670,62 +625,6 @@
     }
 
     // ============================================================
-    // ASK US ANYTHING — Help form from header ? button
-    // ============================================================
-    function HelpForm({ onClose, prefill }) {
-      const [hf, setHf] = useState({ name: prefill?.fullName || "", phone: prefill?.phone || "", email: prefill?.email || "", message: "" });
-      const [sending, setSending] = useState(false);
-      const [sent, setSent] = useState(false);
-
-      const canSend = hf.name.trim().length > 0 && hf.message.trim().length > 0;
-
-      const handleSubmit = async () => {
-        if (!canSend || sending) return;
-        setSending(true);
-        try {
-          await fetch(`${BOOKING_API.replace("/api/booking", "/api/quote-lead")}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              tenantId: CONFIG.tenantId,
-              name: hf.name,
-              phone: hf.phone,
-              email: hf.email,
-              message: hf.message,
-              source: "help_form",
-              timestamp: new Date().toISOString(),
-            }),
-          });
-        } catch (e) { console.log("Help form error (non-blocking):", e.message); }
-        setSending(false);
-        setSent(true);
-      };
-
-      return (
-        <div className="hf-overlay" onClick={onClose}>
-          <div className="hf-modal" onClick={(e) => e.stopPropagation()}>
-            <button className="hf-close" onClick={onClose}>{"\u2715"}</button>
-            {sent ? (
-              <div style={{ textAlign: "center", padding: "24px 0" }}>
-                <div style={{ fontSize: 40, marginBottom: 12 }}>{"\u2705"}</div>
-                <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Thanks!</div>
-                <div style={{ fontSize: 14, color: "#666" }}>We'll get back to you ASAP.</div>
-              </div>
-            ) : (<>
-              <h2 className="hf-title">Ask Us Anything</h2>
-              <p className="hf-sub">Fill in your details, ask your questions, and we'll respond ASAP.</p>
-              <input className="hf-input" placeholder="Full Name" value={hf.name} onChange={(e) => setHf({ ...hf, name: e.target.value })} />
-              <input className="hf-input" placeholder="Phone" value={hf.phone} onChange={(e) => setHf({ ...hf, phone: e.target.value })} />
-              <input className="hf-input" placeholder="Email Address" value={hf.email} onChange={(e) => setHf({ ...hf, email: e.target.value })} />
-              <textarea className="hf-textarea" placeholder="How Can We Help?" value={hf.message} onChange={(e) => setHf({ ...hf, message: e.target.value })} />
-              <button className="hf-submit" disabled={!canSend || sending} onClick={handleSubmit}>{sending ? "Sending..." : "Get Some Help!"}</button>
-            </>)}
-          </div>
-        </div>
-      );
-    }
-
-    // ============================================================
     // MAIN WIZARD
     // ============================================================
     function HVACQuoteWizard() {
@@ -736,7 +635,6 @@
       const [conf, setConf] = useState(null);
       const [bkErr, setBkErr] = useState(null);
       const [leadSent, setLeadSent] = useState(false);
-      const [showHelp, setShowHelp] = useState(false);
 
       const STEPS = ["lead", "address", "systemType", "homeSize", "unitLocation", "energySource", "review", "loading", "results", "liveCalendar", "confirmBooking", "thankYou"];
       const goN = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
@@ -800,9 +698,8 @@
         <div className="wz">
           <div className="hdr">
             {CONFIG.logoUrl ? <img className="hdr-logo" src={CONFIG.logoUrl} alt={CONFIG.companyName} /> : <div style={{ fontWeight: 700, fontSize: 18 }}>{CONFIG.companyName}</div>}
-            <div className="hdr-acts"><button className="hdr-btn" onClick={reset} title="Start Over">{"\u21BA"}</button><button className="hdr-btn" onClick={() => setShowHelp(true)} title="Help">?</button><button className="hdr-btn" title="Close">{"\u2715"}</button></div>
+            <div className="hdr-acts"><button className="hdr-btn" onClick={reset} title="Start Over">{"\u21BA"}</button><button className="hdr-btn" title="Help">?</button><button className="hdr-btn" title="Close">{"\u2715"}</button></div>
           </div>
-          {showHelp && <HelpForm onClose={() => setShowHelp(false)} prefill={fd} />}
           {showBk && <Bk onClick={goB} />}
           {bkErr && STEPS[step] !== "liveCalendar" && <div className="eb" style={{ margin: "0 24px 12px" }}>{bkErr}</div>}
           {render()}
