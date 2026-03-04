@@ -535,14 +535,14 @@
       useEffect(() => {
         if (!bk?.sessionId) return;
         let off = false; setLoading(true); setError(null);
-        bookingGet("/availability", { sessionId: bk.sessionId, tag: "sales tech", days: "14" })
+        bookingGet("/availability", { sessionId: bk.sessionId, tag: "sales", days: "14" })
           .then((r) => { if (off) return; setAvail(r); setLoading(false); if (r.availableDays?.length > 0) { const f = new Date(r.availableDays[0].date + "T12:00:00"); setCm(f.getMonth()); setCy(f.getFullYear()); } })
           .catch((e) => { if (off) return; setLoading(false); setError(e.message || "Failed to load availability"); });
         return () => { off = true; };
       }, [bk?.sessionId]);
 
       if (loading) return (<div className="sc" key="cl"><Av /><h1 className="st">Finding available times...</h1><div style={{ padding: 40 }}><div className="spn" /></div><Ht text="We're checking our real-time schedule to find the best available times for your home visit." /></div>);
-      if (error) return (<div className="sc" key="ce"><Av /><h1 className="st">Oops, something went wrong</h1><div className="eb">{error}</div><p style={{ fontSize: 15, color: "#666", marginBottom: 16 }}>Please call us at {CONFIG.companyPhone} to schedule your visit.</p><button className="bp" onClick={() => { setLoading(true); setError(null); bookingGet("/availability", { sessionId: bk.sessionId, tag: "sales tech", days: "14" }).then(r => { setAvail(r); setLoading(false); }).catch(e => { setError(e.message); setLoading(false); }); }}>Try Again</button></div>);
+      if (error) return (<div className="sc" key="ce"><Av /><h1 className="st">Oops, something went wrong</h1><div className="eb">{error}</div><p style={{ fontSize: 15, color: "#666", marginBottom: 16 }}>Please call us at {CONFIG.companyPhone} to schedule your visit.</p><button className="bp" onClick={() => { setLoading(true); setError(null); bookingGet("/availability", { sessionId: bk.sessionId, tag: "sales", days: "14" }).then(r => { setAvail(r); setLoading(false); }).catch(e => { setError(e.message); setLoading(false); }); }}>Try Again</button></div>);
 
       const ad = avail?.availableDays || [];
       const adSet = new Set(ad.map((d) => d.date));
@@ -598,10 +598,12 @@
             serviceType: "estimate", customerType: bk.customerFound ? "existing" : "new", systemAge: "10+",
             name: data.fullName, phone: (data.phone || "").replace(/\D/g, ""), email: data.email,
             address: data.address ? { street: data.address.split(",")[0]?.trim() || data.address, city: data.address.split(",")[1]?.trim() || "", state: data.address.split(",")[2]?.trim()?.split(" ")[0] || "CO", zip: data.address.split(",")[2]?.trim()?.split(" ")[1] || "" } : null,
-            selectedDate: data.selectedDate, selectedSlot: data.selectedSlot,
+            selectedDate: data.selectedDate, selectedSlot: data.selectedSlot, tags: ["Online Quote Booking"],
             issue: [`[Online Quote] New system estimate`, `Equipment: ${eq.name} (${TIER_LABELS[selectedTier]} tier)`, `Stage: ${eq.stage || "N/A"}`, `Quoted Monthly: $${eq.monthlyPrice.toFixed(2)}/mo (${CONFIG.financingTermMonths}mo @ ${CONFIG.financingAPR}%)`, eq.seer2 !== "N/A" ? `SEER2: ${eq.seer2}` : null, eq.hspf2 !== "N/A" ? `HSPF2: ${eq.hspf2}` : null, eq.afue !== "N/A" ? `AFUE: ${eq.afue}` : null, `Home Size: ${SIZE_LABELS[data.homeSize] || data.homeSize}`, `System Type: ${sysLabel[data.systemType] || data.systemType}`, `Address: ${data.address || "Not provided"}`, `Booked via online quoting wizard`].filter(Boolean).join("\n"),
           }, step: "confirm" });
           const result = await bookingPost("/confirm", { sessionId: bk.sessionId });
+          // Send booking confirmation email (fire-and-forget)
+          sendBookingEmail(data, selectedTier, slotLbl);
           onConfirmed(result);
         } catch (e) { setBusy(false); onError(e.message || "Failed to confirm booking"); }
       };
@@ -616,7 +618,7 @@
           <div className="cfr"><div className="cfl">Address</div><div className="cfv" style={{ fontSize: 13 }}>{data.address}</div></div>
         </div>
         {busy ? <div style={{ display: "flex", alignItems: "center", gap: 12 }}><div className="spn" /><span style={{ color: "#888" }}>Creating your appointment...</span></div> : <button className="bp" onClick={confirm}>Confirm Home Visit</button>}
-        <div style={{ flex: 1 }} /><Ht text="After confirming, a sales tech will visit your home to verify the details and finalize your custom quote." /></div>);
+        <div style={{ flex: 1 }} /><Ht text="After confirming, a sales technician will visit your home to verify the details and finalize your custom quote." /></div>);
     }
 
     // ============================================================
@@ -643,6 +645,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             tenantId: CONFIG.tenantId,
+            type: "quote_viewed",
             name: formData.fullName,
             phone: formData.phone,
             email: formData.email,
@@ -661,8 +664,52 @@
           }),
         });
       } catch (e) {
-        // Lead capture is fire-and-forget — don't block the wizard
         console.log("Lead capture error (non-blocking):", e.message);
+      }
+    }
+
+    // ============================================================
+    // BOOKING EMAIL — fires when customer confirms home visit
+    // ============================================================
+    async function sendBookingEmail(formData, selectedTier, slotLabel) {
+      try {
+        const sysLabel = {}; SYSTEM_TYPES.forEach(s => sysLabel[s.id] = s.label);
+        const cat = EQUIPMENT_CATALOG[formData.systemType || "furnace_ac"]?.[formData.homeSize || "large"] || EQUIPMENT_CATALOG.furnace_ac.large;
+        const eq = cat[selectedTier] || cat.good;
+        await fetch(`${BOOKING_API.replace("/api/booking", "/api/quote-lead")}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tenantId: CONFIG.tenantId,
+            type: "booking_confirmed",
+            name: formData.fullName,
+            phone: formData.phone,
+            email: formData.email,
+            address: formData.address,
+            unit: formData.unit || "",
+            systemType: sysLabel[formData.systemType] || formData.systemType,
+            homeSize: SIZE_LABELS[formData.homeSize] || formData.homeSize,
+            unitLocation: formData.unitLocation,
+            selectedTier: TIER_LABELS[selectedTier] || selectedTier,
+            selectedEquipment: eq.name,
+            selectedMonthly: eq.monthlyPrice,
+            selectedCash: eq.cashPrice,
+            seer2: eq.seer2,
+            hspf2: eq.hspf2,
+            afue: eq.afue,
+            stage: eq.stage,
+            appointmentTime: slotLabel,
+            goodMonthly: cat.good?.monthlyPrice,
+            betterMonthly: cat.better?.monthlyPrice,
+            bestMonthly: cat.best?.monthlyPrice,
+            goodName: cat.good?.name,
+            betterName: cat.better?.name,
+            bestName: cat.best?.name,
+            timestamp: new Date().toISOString(),
+          }),
+        });
+      } catch (e) {
+        console.log("Booking email error (non-blocking):", e.message);
       }
     }
 
@@ -695,7 +742,7 @@
         setTier(t); setBkErr(null);
         try {
           const sess = await bookingPost("/start", { tenantId: CONFIG.tenantId });
-          await bookingPost("/update-session", { sessionId: sess.sessionId, updates: { serviceType: "estimate", systemAge: "10+" }, step: "calendar" });
+          await bookingPost("/update-session", { sessionId: sess.sessionId, updates: { serviceType: "estimate", systemAge: "10+", tags: ["Online Quote Booking"] }, step: "calendar" });
           const phone = (fd.phone || "").replace(/\D/g, "");
           let cf = false;
           if (phone.length === 10) { try { const lu = await bookingPost("/lookup-customer", { sessionId: sess.sessionId, phone }); cf = lu.found || false; } catch {} }
