@@ -361,8 +361,7 @@
   function renderSystemAge() {
     const options = [
       { value: '0-2', icon: '\uD83C\uDD95', label: '0\u20132 Years' },
-      { value: '3-5', icon: '\u2705', label: '3\u20135 Years' },
-      { value: '6-10', icon: '\u26A0\uFE0F', label: '6\u201310 Years' },
+      { value: '3-10', icon: '\u2705', label: '3\u201310 Years' },
       { value: '10+', icon: '\uD83D\uDD34', label: '10+ Years' },
       { value: '10+', icon: '\u2753', label: 'Not Sure' }
     ];
@@ -470,7 +469,7 @@
     const dateDisplay = slotDay ? slotDay.displayDate : d.selectedDate;
     const timeDisplay = d.selectedSlot?.formatted || '';
     const serviceLabels = { repair: 'Repair Service', estimate: 'Free Estimate', maintenance: 'Maintenance' };
-    const ageLabels = { '0-2': '0\u20132 Years', '3-5': '3\u20135 Years', '6-10': '6\u201310 Years', '10+': '10+ Years' };
+    const ageLabels = { '0-2': '0\u20132 Years', '3-10': '3\u201310 Years', '10+': '10+ Years' };
     let addressStr = '';
     if (d.address && d.address.street) { addressStr = `${d.address.street}, ${d.address.city}, ${d.address.state} ${d.address.zip}`; }
     else if (d.customer?.address) { const ca = d.customer.address; addressStr = `${ca.street}, ${ca.city}`; }
@@ -653,10 +652,13 @@
   async function loadAvailability() {
     state.loading = true; state.error = null; render();
     try {
-      let tag = 'service tech';
-      if (state.data.serviceType === 'maintenance') tag = 'maintenance tech';
-      else if (state.data.serviceType === 'estimate') tag = 'sales tech';
+      let tag = 'service tech 3-10'; // Default for 3-10 year repairs
+      if (state.data.serviceType === 'maintenance') {
+        tag = state.data.systemAge === '10+' ? 'sales tech' : 'maintenance tech';
+      }
+      else if (state.data.serviceType === 'estimate') tag = 'sales';
       else if (state.data.systemAge === '10+') tag = 'sales tech';
+      else if (state.data.systemAge === '0-2') tag = 'service tech';
       const result = await apiGet('/availability', { sessionId: state.sessionId, tag: tag, days: '14' });
       state.availability = result;
       state.loading = false;
