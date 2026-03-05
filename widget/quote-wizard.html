@@ -339,39 +339,14 @@
         <button className="bp" disabled={!nOk || !pOk} onClick={onNext}>Next</button><div style={{ flex: 1 }} /><Ht text="We ask for your phone number so our technicians can contact you if we see any issues with setting up your new system." /></div>);
     }
 
-    // Mini Google Map component
+    // Static Google Map image — no Geocoding API needed, just uses the address string
     function MiniMap({ address }) {
-      const mapRef = React.useRef(null);
-      const mapInstance = React.useRef(null);
-      const markerInstance = React.useRef(null);
-
-      useEffect(() => {
-        if (!mapRef.current || !window.google?.maps || !address) return;
-        const geocoder = new window.google.maps.Geocoder();
-        geocoder.geocode({ address }, (results, status) => {
-          if (status === "OK" && results[0]) {
-            const loc = results[0].geometry.location;
-            if (!mapInstance.current) {
-              mapInstance.current = new window.google.maps.Map(mapRef.current, {
-                center: loc, zoom: 16, disableDefaultUI: true, zoomControl: true,
-                styles: [
-                  { featureType: "poi", stylers: [{ visibility: "off" }] },
-                  { featureType: "transit", stylers: [{ visibility: "off" }] },
-                ],
-              });
-              markerInstance.current = new window.google.maps.Marker({
-                position: loc, map: mapInstance.current,
-                icon: { path: window.google.maps.SymbolPath.CIRCLE, scale: 10, fillColor: "#F28C28", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 3 },
-              });
-            } else {
-              mapInstance.current.setCenter(loc);
-              markerInstance.current.setPosition(loc);
-            }
-          }
-        });
-      }, [address]);
-
-      return <div ref={mapRef} style={{ width: "100%", maxWidth: 520, height: 180, borderRadius: 12, overflow: "hidden", background: "#e8f4e8" }} />;
+      const encoded = encodeURIComponent(address);
+      const key = "AIzaSyA2bAqk6S5LGpJTDhWoQ8vZQ9h-uTLnT-w";
+      const src = `https://maps.googleapis.com/maps/api/staticmap?center=${encoded}&zoom=16&size=520x180&scale=2&markers=color:orange%7C${encoded}&style=feature:poi%7Cvisibility:off&style=feature:transit%7Cvisibility:off&key=${key}`;
+      const [failed, setFailed] = useState(false);
+      if (failed) return <div className="mp">{"\u{1F4CD}"}</div>;
+      return <img src={src} alt="Map" onError={() => setFailed(true)} style={{ width: "100%", maxWidth: 520, height: 180, borderRadius: 12, objectFit: "cover" }} />;
     }
 
     function S2({ data, onChange, onNext }) {
@@ -714,6 +689,57 @@
     }
 
     // ============================================================
+    // HELP / CONTACT MODAL
+    // ============================================================
+    function HelpModal({ onClose }) {
+      const [name, setName] = useState("");
+      const [phone, setPhone] = useState("");
+      const [msg, setMsg] = useState("");
+      const [sent, setSent] = useState(false);
+      const fmtPh = (v) => { const d = v.replace(/\D/g, "").slice(0, 10); if (d.length <= 3) return d; if (d.length <= 6) return `(${d.slice(0,3)}) ${d.slice(3)}`; return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`; };
+
+      const handleSubmit = async () => {
+        try {
+          await fetch(`${BOOKING_API.replace("/api/booking", "/api/quote-lead")}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              tenantId: CONFIG.tenantId, name, phone, email: "",
+              address: "", systemType: "Help Request", homeSize: "",
+              unitLocation: "", timestamp: new Date().toISOString(),
+              goodName: "N/A", betterName: "N/A", bestName: "N/A",
+              goodMonthly: 0, betterMonthly: 0, bestMonthly: 0,
+            }),
+          });
+        } catch (e) {}
+        setSent(true);
+      };
+
+      const canSubmit = name.trim().length > 0 && phone.replace(/\D/g, "").length === 10;
+
+      return (<div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={onClose}>
+        <div style={{ background: "white", borderRadius: 16, padding: 32, maxWidth: 420, width: "100%", position: "relative" }} onClick={(e) => e.stopPropagation()}>
+          <button onClick={onClose} style={{ position: "absolute", top: 12, right: 16, background: "none", border: "none", fontSize: 22, color: "#999", cursor: "pointer" }}>{"\u2715"}</button>
+          {sent ? (<>
+            <div style={{ textAlign: "center", padding: "20px 0" }}>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>{"\u2705"}</div>
+              <h2 style={{ fontSize: 22, fontWeight: 700, color: "#222", margin: "0 0 8px" }}>We'll be in touch!</h2>
+              <p style={{ color: "#666", fontSize: 15 }}>A member of our team will reach out to you shortly.</p>
+              <button className="bp" style={{ marginTop: 20 }} onClick={onClose}>Close</button>
+            </div>
+          </>) : (<>
+            <h2 style={{ fontSize: 22, fontWeight: 700, color: "#222", margin: "0 0 4px" }}>Need Help?</h2>
+            <p style={{ color: "#666", fontSize: 14, margin: "0 0 20px" }}>Call us at <a href={"tel:" + CONFIG.companyPhone} style={{ color: CONFIG.brandColor, fontWeight: 600, textDecoration: "none" }}>{CONFIG.companyPhone}</a> or leave your info below and we'll reach out.</p>
+            <input className="inf" placeholder="Full Name*" value={name} onChange={(e) => setName(e.target.value)} style={{ marginBottom: 12, width: "100%", boxSizing: "border-box" }} />
+            <input className="inf" placeholder="Phone Number*" value={phone} onChange={(e) => setPhone(fmtPh(e.target.value))} style={{ marginBottom: 12, width: "100%", boxSizing: "border-box" }} />
+            <textarea placeholder="How can we help? (optional)" value={msg} onChange={(e) => setMsg(e.target.value)} style={{ width: "100%", boxSizing: "border-box", minHeight: 80, padding: "12px 16px", borderRadius: 8, border: "2px solid #ddd", fontFamily: "inherit", fontSize: 15, resize: "vertical", outline: "none" }} />
+            <button className="bp" disabled={!canSubmit} onClick={handleSubmit} style={{ marginTop: 16, width: "100%" }}>Send</button>
+          </>)}
+        </div>
+      </div>);
+    }
+
+    // ============================================================
     // MAIN WIZARD
     // ============================================================
     function HVACQuoteWizard() {
@@ -724,6 +750,7 @@
       const [conf, setConf] = useState(null);
       const [bkErr, setBkErr] = useState(null);
       const [leadSent, setLeadSent] = useState(false);
+      const [showHelp, setShowHelp] = useState(false);
 
       const STEPS = ["lead", "address", "systemType", "homeSize", "unitLocation", "review", "loading", "results", "liveCalendar", "confirmBooking", "thankYou"];
       const goN = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
@@ -786,8 +813,9 @@
         <div className="wz">
           <div className="hdr">
             {CONFIG.logoUrl ? <img className="hdr-logo" src={CONFIG.logoUrl} alt={CONFIG.companyName} /> : <div style={{ fontWeight: 700, fontSize: 18 }}>{CONFIG.companyName}</div>}
-            <div className="hdr-acts"><button className="hdr-btn" onClick={reset} title="Start Over">{"\u21BA"}</button><button className="hdr-btn" title="Help">?</button><button className="hdr-btn" title="Close">{"\u2715"}</button></div>
+            <div className="hdr-acts"><button className="hdr-btn" onClick={reset} title="Start Over">{"\u21BA"}</button><button className="hdr-btn" onClick={() => setShowHelp(true)} title="Help">?</button><button className="hdr-btn" onClick={() => { if (window.parent !== window) window.parent.postMessage({ type: "rox-quote-close" }, "*"); }} title="Close">{"\u2715"}</button></div>
           </div>
+          {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
           {showBk && <Bk onClick={goB} />}
           {bkErr && STEPS[step] !== "liveCalendar" && <div className="eb" style={{ margin: "0 24px 12px" }}>{bkErr}</div>}
           {render()}
