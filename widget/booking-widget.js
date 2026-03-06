@@ -114,6 +114,9 @@
       selectedDate: null, selectedSlot: null, issue: '',
       name: '', phone: '', email: '',
       address: { street: '', city: '', state: 'CO', zip: '' },
+      _addrSuggestions: [],
+      _addrPicked: false,
+      _addrLoading: false,
       customer: null
     },
     availability: null, loading: false, error: null, confirmation: null
@@ -143,6 +146,38 @@
       throw new Error(err.error || err.message || `Request failed: ${res.status}`);
     }
     return res.json();
+  }
+
+  // ============================================
+  // ADDRESS AUTOCOMPLETE (server-side Google Places)
+  // ============================================
+  let _addrTimer = null;
+  async function fetchAddressSuggestions(query) {
+    if (query.length < 3) { state._addrSuggestions = []; state._addrLoading = false; render(); return; }
+    state._addrLoading = true; render();
+    try {
+      const url = `${CONFIG.serverUrl}/api/widget-config/address-suggest?q=${encodeURIComponent(query)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Suggest failed');
+      const data = await res.json();
+      state._addrSuggestions = data.suggestions || [];
+      state._addrLoading = false;
+      state._addrPicked = false;
+      render();
+    } catch (e) {
+      state._addrSuggestions = [];
+      state._addrLoading = false;
+      render();
+    }
+  }
+  async function fetchAddressDetails(placeId) {
+    try {
+      const url = `${CONFIG.serverUrl}/api/widget-config/address-details?placeId=${encodeURIComponent(placeId)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Details failed');
+      const data = await res.json();
+      return data.address || null;
+    } catch (e) { return null; }
   }
 
   // ============================================
@@ -279,6 +314,13 @@
       .rxb-customer-card { padding: 16px 20px; background: ${C.successBg}; border: 1px solid ${C.successBorder}; border-radius: ${R - 2}px; margin-bottom: 20px; }
       .rxb-customer-card h4 { font-size: 15px; font-weight: 600; color: ${C.successText}; margin-bottom: 4px; }
       .rxb-customer-card p { font-size: 13px; color: ${C.textSecondary}; }
+      .rxb-addr-wrap { position: relative; }
+      .rxb-addr-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: ${C.cardBg}; border: 1.5px solid ${C.primary}; border-top: none; border-radius: 0 0 ${R - 2}px ${R - 2}px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 50; overflow: hidden; }
+      .rxb-addr-item { padding: 12px 16px; font-size: 14px; color: ${C.text}; cursor: pointer; border-bottom: 1px solid ${C.cardBorder}; transition: background 0.15s; }
+      .rxb-addr-item:last-child { border-bottom: none; }
+      .rxb-addr-item:hover { background: ${C.primaryLight}; color: ${C.primary}; }
+      .rxb-addr-item small { display: block; font-size: 12px; color: ${C.textMuted}; margin-top: 2px; }
+      .rxb-addr-loading { padding: 12px 16px; font-size: 13px; color: ${C.textMuted}; text-align: center; }
       @media (max-width: 480px) { .rxb-card { padding: 24px 18px; } .rxb-header h2 { font-size: 22px; } .rxb-slots-grid { grid-template-columns: repeat(2, 1fr); } }
     `;
     document.head.appendChild(style);
@@ -452,7 +494,13 @@
 
   function renderAddress() {
     const a = state.data.address;
-    return `<div class="rxb-card"><div class="rxb-card-title">Service Address</div><div class="rxb-card-subtitle">Where should we send the technician?</div><div class="rxb-field"><label class="rxb-label">Street Address</label><input type="text" class="rxb-input" id="rxb-street" placeholder="123 Main St" value="${a.street}" autocomplete="street-address"></div><div class="rxb-input-row"><div class="rxb-field"><label class="rxb-label">City</label><input type="text" class="rxb-input" id="rxb-city" placeholder="Denver" value="${a.city}" autocomplete="address-level2"></div><div class="rxb-field"><label class="rxb-label">Zip Code</label><input type="text" class="rxb-input" id="rxb-zip" placeholder="80202" value="${a.zip}" maxlength="5" autocomplete="postal-code"></div></div>${renderNav(true, true)}</div>`;
+    const suggestions = state._addrSuggestions || [];
+    const showDropdown = suggestions.length > 0 && !state._addrPicked;
+    const dropdownHtml = showDropdown
+      ? `<div class="rxb-addr-dropdown">${suggestions.map((s, i) => `<div class="rxb-addr-item" data-action="pick-address" data-value="${i}"><span>${escapeHtml(s.mainText)}</span><small>${escapeHtml(s.secondaryText || '')}</small></div>`).join('')}</div>`
+      : (state._addrLoading ? `<div class="rxb-addr-dropdown"><div class="rxb-addr-loading">Looking up address...</div></div>` : '');
+
+    return `<div class="rxb-card"><div class="rxb-card-title">Service Address</div><div class="rxb-card-subtitle">Where should we send the technician?</div><div class="rxb-field"><label class="rxb-label">Street Address</label><div class="rxb-addr-wrap"><input type="text" class="rxb-input" id="rxb-street" placeholder="Start typing your address..." value="${a.street}" autocomplete="off">${dropdownHtml}</div></div><div class="rxb-input-row"><div class="rxb-field"><label class="rxb-label">City</label><input type="text" class="rxb-input" id="rxb-city" placeholder="Denver" value="${a.city}" autocomplete="address-level2"></div><div class="rxb-field"><label class="rxb-label">Zip Code</label><input type="text" class="rxb-input" id="rxb-zip" placeholder="80202" value="${a.zip}" maxlength="5" autocomplete="postal-code"></div></div>${renderNav(true, true)}</div>`;
   }
 
   function renderContactInfo() {
@@ -510,6 +558,22 @@
         e.target.value = formatPhone(digits);
       });
     }
+    // Address autocomplete: debounced lookup on street field
+    const streetInput = root.querySelector('#rxb-street');
+    if (streetInput) {
+      streetInput.addEventListener('input', (e) => {
+        const val = e.target.value.trim();
+        state.data.address.street = val;
+        state._addrPicked = false;
+        if (_addrTimer) clearTimeout(_addrTimer);
+        if (val.length < 3) { state._addrSuggestions = []; return; }
+        _addrTimer = setTimeout(() => fetchAddressSuggestions(val), 300);
+      });
+      // Keep focus management — close dropdown when clicking outside
+      streetInput.addEventListener('blur', () => {
+        setTimeout(() => { state._addrSuggestions = []; state._addrLoading = false; render(); }, 200);
+      });
+    }
   }
 
   async function handleAction(e) {
@@ -557,6 +621,28 @@
         break;
       case 'back': goBack(); break;
       case 'next': goNext(); break;
+      case 'pick-address':
+        const addrIdx = parseInt(value);
+        const suggestion = state._addrSuggestions?.[addrIdx];
+        if (suggestion?.placeId) {
+          state._addrPicked = true;
+          state._addrSuggestions = [];
+          state._addrLoading = true;
+          render();
+          const details = await fetchAddressDetails(suggestion.placeId);
+          state._addrLoading = false;
+          if (details) {
+            state.data.address.street = details.street;
+            state.data.address.city = details.city || '';
+            state.data.address.state = details.state || 'CO';
+            state.data.address.zip = details.zip || '';
+            console.log('[ROX Booking] Address auto-filled:', details.formatted || details.street);
+          } else {
+            state.data.address.street = suggestion.mainText || suggestion.description?.split(',')[0] || '';
+          }
+          render();
+        }
+        break;
       case 'confirm-booking': await confirmBooking(); break;
     }
   }
