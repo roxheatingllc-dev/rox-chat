@@ -152,9 +152,39 @@
   // ADDRESS AUTOCOMPLETE (server-side Google Places)
   // ============================================
   let _addrTimer = null;
+
+  // Update just the dropdown without rebuilding the whole DOM
+  function updateAddrDropdown() {
+    const wrap = root.querySelector('.rxb-addr-wrap');
+    if (!wrap) return;
+
+    // Remove existing dropdown
+    const existing = wrap.querySelector('.rxb-addr-dropdown');
+    if (existing) existing.remove();
+
+    const suggestions = state._addrSuggestions || [];
+    const showDropdown = suggestions.length > 0 && !state._addrPicked;
+
+    if (state._addrLoading) {
+      wrap.insertAdjacentHTML('beforeend', '<div class="rxb-addr-dropdown"><div class="rxb-addr-loading">Looking up address...</div></div>');
+    } else if (showDropdown) {
+      const html = '<div class="rxb-addr-dropdown">' + suggestions.map((s, i) =>
+        `<div class="rxb-addr-item" data-action="pick-address" data-value="${i}"><span>${escapeHtml(s.mainText)}</span><small>${escapeHtml(s.secondaryText || '')}</small></div>`
+      ).join('') + '</div>';
+      wrap.insertAdjacentHTML('beforeend', html);
+      // Attach click handlers to new dropdown items
+      wrap.querySelectorAll('[data-action="pick-address"]').forEach(el => {
+        el.addEventListener('mousedown', (e) => {
+          e.preventDefault(); // Prevent blur from firing before click
+          handleAction({ currentTarget: el });
+        });
+      });
+    }
+  }
+
   async function fetchAddressSuggestions(query) {
-    if (query.length < 3) { state._addrSuggestions = []; state._addrLoading = false; render(); return; }
-    state._addrLoading = true; render();
+    if (query.length < 3) { state._addrSuggestions = []; updateAddrDropdown(); return; }
+    state._addrLoading = true; updateAddrDropdown();
     try {
       const url = `${CONFIG.serverUrl}/api/widget-config/address-suggest?q=${encodeURIComponent(query)}`;
       const res = await fetch(url);
@@ -163,11 +193,11 @@
       state._addrSuggestions = data.suggestions || [];
       state._addrLoading = false;
       state._addrPicked = false;
-      render();
+      updateAddrDropdown();
     } catch (e) {
       state._addrSuggestions = [];
       state._addrLoading = false;
-      render();
+      updateAddrDropdown();
     }
   }
   async function fetchAddressDetails(placeId) {
@@ -494,13 +524,7 @@
 
   function renderAddress() {
     const a = state.data.address;
-    const suggestions = state._addrSuggestions || [];
-    const showDropdown = suggestions.length > 0 && !state._addrPicked;
-    const dropdownHtml = showDropdown
-      ? `<div class="rxb-addr-dropdown">${suggestions.map((s, i) => `<div class="rxb-addr-item" data-action="pick-address" data-value="${i}"><span>${escapeHtml(s.mainText)}</span><small>${escapeHtml(s.secondaryText || '')}</small></div>`).join('')}</div>`
-      : (state._addrLoading ? `<div class="rxb-addr-dropdown"><div class="rxb-addr-loading">Looking up address...</div></div>` : '');
-
-    return `<div class="rxb-card"><div class="rxb-card-title">Service Address</div><div class="rxb-card-subtitle">Where should we send the technician?</div><div class="rxb-field"><label class="rxb-label">Street Address</label><div class="rxb-addr-wrap"><input type="text" class="rxb-input" id="rxb-street" placeholder="Start typing your address..." value="${a.street}" autocomplete="off">${dropdownHtml}</div></div><div class="rxb-input-row"><div class="rxb-field"><label class="rxb-label">City</label><input type="text" class="rxb-input" id="rxb-city" placeholder="Denver" value="${a.city}" autocomplete="address-level2"></div><div class="rxb-field"><label class="rxb-label">Zip Code</label><input type="text" class="rxb-input" id="rxb-zip" placeholder="80202" value="${a.zip}" maxlength="5" autocomplete="postal-code"></div></div>${renderNav(true, true)}</div>`;
+    return `<div class="rxb-card"><div class="rxb-card-title">Service Address</div><div class="rxb-card-subtitle">Where should we send the technician?</div><div class="rxb-field"><label class="rxb-label">Street Address</label><div class="rxb-addr-wrap"><input type="text" class="rxb-input" id="rxb-street" placeholder="Start typing your address..." value="${escapeHtml(a.street)}" autocomplete="off"></div></div><div class="rxb-input-row"><div class="rxb-field"><label class="rxb-label">City</label><input type="text" class="rxb-input" id="rxb-city" placeholder="Denver" value="${escapeHtml(a.city)}" autocomplete="address-level2"></div><div class="rxb-field"><label class="rxb-label">Zip Code</label><input type="text" class="rxb-input" id="rxb-zip" placeholder="80202" value="${escapeHtml(a.zip)}" maxlength="5" autocomplete="postal-code"></div></div>${renderNav(true, true)}</div>`;
   }
 
   function renderContactInfo() {
@@ -562,16 +586,21 @@
     const streetInput = root.querySelector('#rxb-street');
     if (streetInput) {
       streetInput.addEventListener('input', (e) => {
-        const val = e.target.value.trim();
+        const val = e.target.value; // Do NOT trim — preserves spaces while typing
         state.data.address.street = val;
         state._addrPicked = false;
         if (_addrTimer) clearTimeout(_addrTimer);
-        if (val.length < 3) { state._addrSuggestions = []; return; }
-        _addrTimer = setTimeout(() => fetchAddressSuggestions(val), 300);
+        const trimmed = val.trim();
+        if (trimmed.length < 3) { state._addrSuggestions = []; updateAddrDropdown(); return; }
+        _addrTimer = setTimeout(() => fetchAddressSuggestions(trimmed), 350);
       });
-      // Keep focus management — close dropdown when clicking outside
+      // Close dropdown on blur (after a short delay so clicks can register)
       streetInput.addEventListener('blur', () => {
-        setTimeout(() => { state._addrSuggestions = []; state._addrLoading = false; render(); }, 200);
+        setTimeout(() => {
+          state._addrSuggestions = [];
+          state._addrLoading = false;
+          updateAddrDropdown(); // Only update dropdown, not full render
+        }, 250);
       });
     }
   }
