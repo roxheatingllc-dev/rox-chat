@@ -2,6 +2,8 @@
  * Booking API Routes (rox-chat side)
  * Proxies booking wizard requests to the engine API.
  * Handles rate limiting, validation, and CORS.
+ * 
+ * v1.1.0 — Added /abandon proxy for abandonment notifications
  */
 
 const express = require('express');
@@ -133,6 +135,25 @@ router.post('/confirm', rateLimit, async (req, res) => {
   } catch (err) {
     console.error('[BookingRoutes] Confirm error:', err.message);
     res.status(500).json({ error: 'Failed to confirm booking' });
+  }
+});
+
+// ========================================
+// POST /api/booking/abandon — Proxy to engine
+// Called by booking widget on page unload or close
+// ========================================
+router.post('/abandon', async (req, res) => {
+  try {
+    const { sessionId, reason } = req.body || {};
+    if (!sessionId) return res.json({ ok: true });
+
+    bookingAdapter.request('POST', '/abandon', { sessionId, reason })
+      .catch(e => console.error('[BookingRoutes] Abandon proxy error:', e.message));
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[BookingRoutes] Abandon error:', err.message);
+    res.json({ ok: true });
   }
 });
 

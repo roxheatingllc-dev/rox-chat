@@ -1,8 +1,19 @@
 /**
  * Chat API Routes
+ * Version: 3.1.0
+ * 
  * REST endpoints for the chat widget to communicate with the engine.
  * 
- * v3.1.0 - Added smart quick reply injection based on conversation state
+ * v3.1.0 Changes:
+ *   - Added injectQuickReplies() function that reads conversation state
+ *     from engine responses and injects clickable quick reply buttons
+ *   - Only injects when the engine does not provide its own quickReplies
+ *     (engine always takes priority - this is a fallback enhancement)
+ *   - Buttons mapped by state: system_age, offer_slot, final_questions,
+ *     additional_notes, collect_email, schedule/time preference, 
+ *     address_confirm, rox_installed
+ *
+ * Multi-tenant ready: state-to-button mappings could move to tenant config
  */
 
 const express = require('express');
@@ -55,95 +66,113 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 // ========================================
-// SMART QUICK REPLY INJECTION
-// Adds clickable buttons based on the
-// conversation state returned by the engine.
-// Engine returns state but empty quickReplies[]
-// in Phase 3 — we fill them in here.
+// v3.1.0: QUICK REPLY BUTTON INJECTION
+//
+// Maps conversation states to helpful quick
+// reply buttons. Only injects when the engine
+// does not already provide its own quickReplies.
+//
+// This runs on the rox-chat side (not engine)
+// so it works without modifying rox-ai-answering.
+//
+// Multi-tenant ready: could be moved to tenant
+// config or loaded from theme files.
 // ========================================
+
+/**
+ * State-to-button mapping.
+ * Each key is a conversation state from the engine.
+ * Each value is an array of { label, value } objects.
+ * 
+ * label = what the user sees on the button
+ * value = what gets sent as the message when clicked
+ */
+const STATE_QUICK_REPLIES = {
+  // System age question - helps users pick without typing
+  system_age: [
+    { label: '0-2 Years', value: '0 to 2 years old' },
+    { label: '3-10 Years', value: '3 to 10 years old' },
+    { label: '10+ Years', value: 'Over 10 years old' },
+    { label: 'Not Sure', value: "I'm not sure how old it is" }
+  ],
+  
+  // Slot offered - accept or request different time
+  offer_slot: [
+    { label: 'Yes, that works!', value: 'Yes, that works!' },
+    { label: 'Different time', value: "I'd prefer a different time" }
+  ],
+  
+  // Post-booking - any final questions?
+  final_questions: [
+    { label: "No, that's all!", value: "No, that's all!" },
+    { label: 'Yes, I have a question', value: 'Yes, I have a question' }
+  ],
+  
+  // Additional notes for the technician
+  additional_notes: [
+    { label: 'No additional notes', value: 'No additional notes' }
+  ],
+  
+  // Email collection - allow skip
+  collect_email: [
+    { label: 'Skip', value: "I'll skip the email" }
+  ],
+  
+  // Schedule preference (ASAP vs specific time)
+  schedule_preference: [
+    { label: 'ASAP', value: 'As soon as possible' },
+    { label: 'Morning', value: 'Morning works best' },
+    { label: 'Afternoon', value: 'Afternoon works best' }
+  ],
+  
+  // Time preference (same options, different state name)
+  time_preference: [
+    { label: 'ASAP', value: 'As soon as possible' },
+    { label: 'Morning', value: 'Morning works best' },
+    { label: 'Afternoon', value: 'Afternoon works best' }
+  ],
+  
+  // Address confirmation
+  address_confirm: [
+    { label: 'Yes', value: 'Yes, that address is correct' },
+    { label: 'No, different address', value: 'No, I have a different address' }
+  ],
+  
+  // ROX-installed system check
+  rox_installed: [
+    { label: 'Yes', value: 'Yes, ROX installed it' },
+    { label: 'No', value: 'No, a different company installed it' },
+    { label: 'Not Sure', value: "I'm not sure who installed it" }
+  ]
+};
+
+/**
+ * Inject quick reply buttons based on conversation state.
+ * 
+ * Rules:
+ *   1. If the engine already returned quickReplies, DO NOT override
+ *   2. Look up the response state in STATE_QUICK_REPLIES
+ *   3. If found, inject those buttons into the response
+ *   4. If not found, leave quickReplies empty (no injection)
+ * 
+ * This is safe to call on every response. It is a no-op when
+ * the engine provides its own buttons or the state is not mapped.
+ * 
+ * @param {Object} response - Engine response with { message, quickReplies, state, ... }
+ * @returns {Object} Same response, possibly with quickReplies added
+ */
 function injectQuickReplies(response) {
-  // If engine already provided quick replies, don't override
+  // Rule 1: Engine already provided buttons - respect engine priority
   if (response.quickReplies && response.quickReplies.length > 0) {
     return response;
   }
-
+  
+  // Rule 2: Look up state in our mapping
   const state = response.state;
-  if (!state) return response;
-
-  switch (state) {
-    // System age question
-    case 'system_age':
-      response.quickReplies = [
-        { label: '🆕 0–2 Years', value: '0 to 2 years old' },
-        { label: '✅ 3–5 Years', value: '3 to 5 years old' },
-        { label: '⚠️ 6–10 Years', value: '6 to 10 years old' },
-        { label: '🔴 10+ Years', value: 'Over 10 years old' },
-        { label: '❓ Not Sure', value: "I'm not sure how old it is" }
-      ];
-      break;
-
-    // Offered a time slot — yes/no
-    case 'offer_slot':
-      response.quickReplies = [
-        { label: '✅ Yes, that works!', value: 'Yes that works for me' },
-        { label: '🔄 Different time', value: 'I need a different time' }
-      ];
-      break;
-
-    // After booking — anything else?
-    case 'final_questions':
-      response.quickReplies = [
-        { label: "👍 No, that's all!", value: "No that's all thank you" },
-        { label: '🙋 Yes, I have a question', value: 'Yes I have a question' }
-      ];
-      break;
-
-    // Additional notes for tech
-    case 'additional_notes':
-      response.quickReplies = [
-        { label: '👍 No additional notes', value: 'No additional notes' }
-      ];
-      break;
-
-    // Email collection
-    case 'collect_email':
-      response.quickReplies = [
-        { label: '⏭️ Skip', value: 'No email' }
-      ];
-      break;
-
-    // Address confirmation (existing customer)
-    case 'address_confirm':
-      response.quickReplies = [
-        { label: '✅ Yes, that\'s correct', value: 'Yes that is correct' },
-        { label: '❌ No, different address', value: 'No different address' }
-      ];
-      break;
-
-    // Time preference
-    case 'schedule_preference':
-    case 'time_preference':
-      response.quickReplies = [
-        { label: '⚡ ASAP / Next Available', value: 'As soon as possible' },
-        { label: '🌅 Morning', value: 'Morning' },
-        { label: '☀️ Afternoon', value: 'Afternoon' }
-      ];
-      break;
-
-    // ROX installed question
-    case 'rox_installed':
-      response.quickReplies = [
-        { label: '✅ Yes, ROX installed it', value: 'Yes ROX installed it' },
-        { label: '❌ No', value: 'No a different company installed it' },
-        { label: '❓ Not Sure', value: "I'm not sure who installed it" }
-      ];
-      break;
-
-    default:
-      // No buttons for this state
-      break;
+  if (state && STATE_QUICK_REPLIES[state]) {
+    response.quickReplies = STATE_QUICK_REPLIES[state];
   }
-
+  
   return response;
 }
 
@@ -196,7 +225,7 @@ router.post('/message', rateLimit, async (req, res) => {
     const maxLen = chatConfig.chat.maxMessageLength || 500;
     const trimmedMessage = message.trim().substring(0, maxLen);
 
-    // Track session
+    // Track session activity
     sessionStore.incrementMessages(sessionId);
 
     // Send to engine
@@ -206,37 +235,68 @@ router.post('/message', rateLimit, async (req, res) => {
       tenantId || chatConfig.tenantId
     );
 
-    // Inject smart quick reply buttons based on conversation state
-    const enriched = injectQuickReplies(response);
+    // v3.1.0: Build response and inject quick replies based on state
+    const chatResponse = {
+      message: response.message,
+      quickReplies: response.quickReplies || [],
+      booking: response.booking || null,
+      endChat: response.endChat || false,
+      state: response.state || null
+    };
 
-    res.json({
-      message: enriched.message,
-      quickReplies: enriched.quickReplies || [],
-      booking: enriched.booking || null,
-      endChat: enriched.endChat || false
-    });
+    // Inject smart quick reply buttons if engine did not provide any
+    injectQuickReplies(chatResponse);
+
+    res.json(chatResponse);
   } catch (err) {
     console.error('[ChatRoutes] Message error:', err);
     res.status(500).json({
       error: 'Failed to process message',
-      message: `I'm sorry, something went wrong. Please try again or call us at ${chatConfig.company.phone}.`
+      message: "I'm sorry, something went wrong. Please try again or call us at (720) 468-0689."
     });
   }
 });
 
 // ========================================
-// GET /api/chat/health - Health check
+// POST /api/chat/end — Chat closed/abandoned (proxy to engine)
+// ========================================
+router.post('/end', async (req, res) => {
+  try {
+    const { sessionId, reason } = req.body || {};
+    if (!sessionId) return res.json({ ok: true });
+
+    // Forward to engine
+    const engineUrl = process.env.ENGINE_API_URL || 'http://localhost:3000/api/engine';
+    fetch(`${engineUrl}/chat/end`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, reason }),
+      signal: AbortSignal.timeout(5000)
+    }).catch(e => console.error('[ChatRoutes] End proxy error:', e.message));
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[ChatRoutes] End error:', err.message);
+    res.json({ ok: true });
+  }
+});
+
+// ========================================
+// GET /api/chat/health
 // ========================================
 router.get('/health', async (req, res) => {
-  const engineHealthy = await chatAdapter.checkHealth();
-  const sessionStats = sessionStore.getStats();
+  let engineStatus = 'unknown';
+  try {
+    const healthy = await chatAdapter.checkHealth();
+    engineStatus = healthy ? 'connected' : 'unreachable';
+  } catch {
+    engineStatus = 'error';
+  }
 
   res.json({
-    status: engineHealthy ? 'ok' : 'degraded',
-    engine: engineHealthy ? 'connected' : 'unreachable',
-    sessions: sessionStats,
-    uptime: process.uptime(),
-    version: '3.1.0'
+    status: 'ok',
+    engine: engineStatus,
+    activeSessions: sessionStore.getCount ? sessionStore.getCount() : 'unknown'
   });
 });
 

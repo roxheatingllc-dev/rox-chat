@@ -803,6 +803,27 @@
     injectStyles();
     await startSession();
     render();
+
+    // Send abandon signal when customer leaves the page
+    window.addEventListener('beforeunload', () => {
+      if (!state.sessionId || state.currentStep === STEPS.SUCCESS) return;
+      const payload = JSON.stringify({ sessionId: state.sessionId, reason: 'unload' });
+      navigator.sendBeacon(`${CONFIG.serverUrl}/api/booking/abandon`, new Blob([payload], { type: 'application/json' }));
+    });
+    // Also detect visibility change (tab switch on mobile)
+    let _hiddenTimer = null;
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && state.sessionId && state.currentStep !== STEPS.SUCCESS) {
+        _hiddenTimer = setTimeout(() => {
+          const payload = JSON.stringify({ sessionId: state.sessionId, reason: 'close' });
+          navigator.sendBeacon(`${CONFIG.serverUrl}/api/booking/abandon`, new Blob([payload], { type: 'application/json' }));
+        }, 60000); // 1 min hidden = abandoned
+      } else if (_hiddenTimer) {
+        clearTimeout(_hiddenTimer);
+        _hiddenTimer = null;
+      }
+    });
+
     console.log('[ROX Booking] Widget initialized');
   }
 
