@@ -528,7 +528,7 @@
   }
 
   function renderContactInfo() {
-    return `<div class="rxb-card"><div class="rxb-card-title">Your Contact Info</div><div class="rxb-card-subtitle">So we can reach you about your appointment</div><div class="rxb-field"><label class="rxb-label">Full Name</label><input type="text" class="rxb-input" id="rxb-name" placeholder="John Smith" value="${state.data.name}" autocomplete="name"></div><div class="rxb-field"><label class="rxb-label">Phone Number</label><input type="tel" class="rxb-input" id="rxb-contact-phone" placeholder="(720) 555-1234" value="${formatPhone(state.data.phone)}" maxlength="14" autocomplete="tel"></div><div class="rxb-field"><label class="rxb-label">Email (optional)</label><input type="email" class="rxb-input" id="rxb-email" placeholder="john@example.com" value="${state.data.email}" autocomplete="email"></div>${renderNav(true, true)}</div>`;
+    return `<div class="rxb-card"><div class="rxb-card-title">Your Contact Info</div><div class="rxb-card-subtitle">So we can reach you about your appointment</div><div class="rxb-field"><label class="rxb-label">Full Name</label><input type="text" class="rxb-input" id="rxb-name" placeholder="John Smith" value="${state.data.name}" autocomplete="name"></div><div class="rxb-field"><label class="rxb-label">Phone Number</label><input type="tel" class="rxb-input" id="rxb-contact-phone" placeholder="(720) 555-1234" value="${formatPhone(state.data.phone)}" maxlength="14" autocomplete="tel"></div><div class="rxb-field"><label class="rxb-label">Email Address</label><input type="email" class="rxb-input" id="rxb-email" placeholder="john@example.com" value="${state.data.email}" autocomplete="email"></div>${renderNav(true, true)}</div>`;
   }
 
   function renderConfirm() {
@@ -733,6 +733,7 @@
       case STEPS.CONTACT_INFO:
         if (!state.data.name) { state.error = 'Please enter your name.'; render(); return false; }
         if (!state.data.phone || state.data.phone.length < 10) { state.error = 'Please enter a valid phone number.'; render(); return false; }
+        if (!state.data.email || !state.data.email.includes('@') || !state.data.email.includes('.')) { state.error = 'Please enter a valid email address.'; render(); return false; }
         return true;
       default: return true;
     }

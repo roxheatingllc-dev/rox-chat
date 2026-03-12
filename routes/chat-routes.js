@@ -113,10 +113,8 @@ const STATE_QUICK_REPLIES = {
     { label: 'No additional notes', value: 'No additional notes' }
   ],
   
-  // Email collection - allow skip
-  collect_email: [
-    { label: 'Skip', value: "I'll skip the email" }
-  ],
+  // Email collection - required
+  collect_email: [],
   
   // Schedule preference (ASAP vs specific time)
   schedule_preference: [
