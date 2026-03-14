@@ -139,6 +139,19 @@ router.post('/confirm', rateLimit, async (req, res) => {
 });
 
 // ========================================
+// POST /api/booking/message — Send message to office (proxy)
+// ========================================
+router.post('/message', rateLimit, async (req, res) => {
+  try {
+    const result = await bookingAdapter.request('POST', '/message', req.body);
+    res.json(result);
+  } catch (err) {
+    console.error('[BookingRoutes] Message error:', err.message);
+    res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// ========================================
 // POST /api/booking/abandon — Proxy to engine
 // Called by booking widget on page unload or close
 // ========================================

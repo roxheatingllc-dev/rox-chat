@@ -141,6 +141,16 @@ const STATE_QUICK_REPLIES = {
     { label: 'Yes', value: 'Yes, ROX installed it' },
     { label: 'No', value: 'No, a different company installed it' },
     { label: 'Not Sure', value: "I'm not sure who installed it" }
+  ],
+
+  // Zip code confirmation (out of service area)
+  confirm_zip: [
+    { label: '✅ Yes, that\'s correct', value: 'Yes' },
+    { label: '✏️ Enter different zip', value: 'No' }
+  ],
+  msg_confirm_zip: [
+    { label: '✅ Yes, that\'s correct', value: 'Yes' },
+    { label: '✏️ Enter different zip', value: 'No' }
   ]
 };
 

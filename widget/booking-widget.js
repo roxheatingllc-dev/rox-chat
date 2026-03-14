@@ -89,7 +89,8 @@
     ADDRESS: 'address',
     CONTACT_INFO: 'contact_info',
     CONFIRM: 'confirm',
-    SUCCESS: 'success'
+    SUCCESS: 'success',
+    MESSAGE: 'message'
   };
 
   const STEP_FLOW = {
@@ -102,8 +103,28 @@
       STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.PHONE_LOOKUP,
       STEPS.SYSTEM_AGE, STEPS.CALENDAR, STEPS.DESCRIBE_ISSUE,
       STEPS.CONFIRM
+    ],
+    message_new: [
+      STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.CONTACT_INFO,
+      STEPS.MESSAGE, STEPS.SUCCESS
+    ],
+    message_existing: [
+      STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.PHONE_LOOKUP,
+      STEPS.MESSAGE, STEPS.SUCCESS
     ]
   };
+
+  // Service area zip codes (Denver metro)
+  const SERVICE_AREA_ZIPS = new Set([
+    '80002','80003','80004','80005','80007','80010','80011','80012','80013','80014',
+    '80015','80016','80017','80018','80019','80022','80045','80104','80108','80109',
+    '80110','80111','80112','80113','80120','80121','80122','80123','80124','80125',
+    '80126','80127','80128','80129','80130','80134','80138','80165','80166',
+    '80202','80203','80204','80205','80206','80207','80208','80209','80210','80211',
+    '80212','80214','80215','80216','80218','80219','80220','80221','80222','80223',
+    '80224','80226','80227','80228','80230','80231','80232','80235','80236','80237',
+    '80238','80239','80243','80244','80246','80247','80249'
+  ]);
 
   let state = {
     sessionId: null,
@@ -112,11 +133,12 @@
     data: {
       serviceType: null, customerType: null, systemAge: null,
       selectedDate: null, selectedSlot: null, issue: '',
-      name: '', phone: '', email: '',
+      name: '', phone: '', email: '', message: '',
       address: { street: '', city: '', state: 'CO', zip: '' },
       _addrSuggestions: [],
       _addrPicked: false,
       _addrLoading: false,
+      _zipConfirmed: false,
       customer: null
     },
     availability: null, loading: false, error: null, confirmation: null
@@ -375,7 +397,10 @@
     if (!root) return;
     const stepIdx = getStepIndex();
     const totalSteps = getTotalSteps();
-    let html = `<div class="rxb-header"><h2>Book an Appointment</h2><p>Schedule your service with ${CONFIG.companyName}</p></div>`;
+    const isMessage = state.data.serviceType === 'message';
+    const headerTitle = isMessage ? 'Send a Message' : 'Book an Appointment';
+    const headerSub = isMessage ? `Send a message to ${CONFIG.companyName}` : `Schedule your service with ${CONFIG.companyName}`;
+    let html = `<div class="rxb-header"><h2>${headerTitle}</h2><p>${headerSub}</p></div>`;
     if (state.currentStep !== STEPS.SUCCESS) {
       html += '<div class="rxb-progress">';
       for (let i = 0; i < totalSteps; i++) {
@@ -396,6 +421,7 @@
       case STEPS.SYSTEM_AGE: return renderSystemAge();
       case STEPS.CALENDAR: return renderCalendar();
       case STEPS.DESCRIBE_ISSUE: return renderDescribeIssue();
+      case STEPS.MESSAGE: return renderMessage();
       case STEPS.ADDRESS: return renderAddress();
       case STEPS.CONTACT_INFO: return renderContactInfo();
       case STEPS.CONFIRM: return renderConfirm();
@@ -408,7 +434,8 @@
     const options = [
       { value: 'repair', icon: '\uD83D\uDD27', label: 'Repair Service', desc: 'Fix a broken or malfunctioning system' },
       { value: 'estimate', icon: '\uD83D\uDCCB', label: 'Free Estimate', desc: 'Get a quote for a new system installation' },
-      { value: 'maintenance', icon: '\uD83D\uDEE1\uFE0F', label: 'Maintenance', desc: 'Annual tune-up and system check' }
+      { value: 'maintenance', icon: '\uD83D\uDEE1\uFE0F', label: 'Maintenance', desc: 'Annual tune-up and system check' },
+      { value: 'message', icon: '\uD83D\uDCE9', label: 'Send a Message', desc: 'Send a message or request to our office' }
     ];
     return `<div class="rxb-card"><div class="rxb-card-title">What do you need help with?</div><div class="rxb-card-subtitle">Select the service you're looking for</div><div class="rxb-options">${options.map(o => `<button class="rxb-option-btn${state.data.serviceType === o.value ? ' selected' : ''}" data-action="select-service" data-value="${o.value}"><div class="rxb-option-icon">${o.icon}</div><div><div class="rxb-option-label">${o.label}</div><div class="rxb-option-desc">${o.desc}</div></div></button>`).join('')}</div></div>`;
   }
@@ -528,7 +555,23 @@
   }
 
   function renderContactInfo() {
-    return `<div class="rxb-card"><div class="rxb-card-title">Your Contact Info</div><div class="rxb-card-subtitle">So we can reach you about your appointment</div><div class="rxb-field"><label class="rxb-label">Full Name</label><input type="text" class="rxb-input" id="rxb-name" placeholder="John Smith" value="${state.data.name}" autocomplete="name"></div><div class="rxb-field"><label class="rxb-label">Phone Number</label><input type="tel" class="rxb-input" id="rxb-contact-phone" placeholder="(720) 555-1234" value="${formatPhone(state.data.phone)}" maxlength="14" autocomplete="tel"></div><div class="rxb-field"><label class="rxb-label">Email Address</label><input type="email" class="rxb-input" id="rxb-email" placeholder="john@example.com" value="${state.data.email}" autocomplete="email"></div>${renderNav(true, true)}</div>`;
+    const isMessage = state.data.serviceType === 'message';
+    const subtitle = isMessage ? 'So our office can follow up with you' : 'So we can reach you about your appointment';
+    const errorHtml = state.error ? `<div class="rxb-error">${state.error}</div>` : '';
+    const zipWarning = state._zipWarning ? `<div class="rxb-error" style="background: #FFFBE6; border-color: #FFD666; color: #7A6200;">I just want to verify — we don't currently service the ${state.data.address.zip} area. Is this zip correct?</div>` : '';
+    let zipField = '';
+    if (isMessage) {
+      zipField = `<div class="rxb-field"><label class="rxb-label">Zip Code</label><input type="text" class="rxb-input" id="rxb-zip" placeholder="80202" value="${state.data.address.zip}" maxlength="5" autocomplete="postal-code"></div>`;
+    }
+    return `<div class="rxb-card"><div class="rxb-card-title">Your Contact Info</div><div class="rxb-card-subtitle">${subtitle}</div>${errorHtml}${zipWarning}<div class="rxb-field"><label class="rxb-label">Full Name</label><input type="text" class="rxb-input" id="rxb-name" placeholder="John Smith" value="${state.data.name}" autocomplete="name"></div><div class="rxb-field"><label class="rxb-label">Phone Number</label><input type="tel" class="rxb-input" id="rxb-contact-phone" placeholder="(720) 555-1234" value="${formatPhone(state.data.phone)}" maxlength="14" autocomplete="tel"></div><div class="rxb-field"><label class="rxb-label">Email Address</label><input type="email" class="rxb-input" id="rxb-email" placeholder="john@example.com" value="${state.data.email}" autocomplete="email"></div>${zipField}${renderNav(true, true)}</div>`;
+  }
+
+  function renderMessage() {
+    if (state.loading) {
+      return `<div class="rxb-card"><div class="rxb-loading"><div class="rxb-spinner"></div><div class="rxb-loading-text">Sending your message...</div></div></div>`;
+    }
+    const errorHtml = state.error ? `<div class="rxb-error">${state.error}</div>` : '';
+    return `<div class="rxb-card"><div class="rxb-card-title">Your Message</div><div class="rxb-card-subtitle">What would you like to tell our office?</div>${errorHtml}<div class="rxb-field"><label class="rxb-label">Message</label><textarea class="rxb-textarea" id="rxb-message" placeholder="Type your message or request here..." style="min-height: 120px;">${state.data.message || ''}</textarea></div><div class="rxb-nav" style="border-top:none; margin-top:24px; padding-top:0;"><button class="rxb-back-btn" data-action="back">\u2190 Back</button><button class="rxb-next-btn" data-action="submit-message">Send Message \u2709</button></div></div>`;
   }
 
   function renderConfirm() {
@@ -551,6 +594,11 @@
 
   function renderSuccess() {
     const c = state.confirmation;
+    // Message success
+    if (c && c.type === 'message') {
+      return `<div class="rxb-card"><div class="rxb-success"><div class="rxb-success-icon">\u2709</div><h3>Message Sent!</h3><p>Your message has been delivered to our office.</p><p style="margin-top:12px; font-size:14px; color:${THEME.colors.textSecondary}">Someone from our team will follow up with you soon.</p><p style="margin-top:24px; font-size:13px; color:${THEME.colors.textMuted}">Questions? Call us at <strong>${CONFIG.companyPhone}</strong></p></div></div>`;
+    }
+    // Booking success
     return `<div class="rxb-card"><div class="rxb-success"><div class="rxb-success-icon">\u2714</div><h3>You're All Set!</h3><p>Your appointment has been confirmed.</p>${c ? `<div style="margin-top:20px; text-align:left;"><div class="rxb-summary"><div class="rxb-summary-row"><span class="rxb-summary-label">Service</span><span class="rxb-summary-value">${escapeHtml(c.service)}</span></div><div class="rxb-summary-row"><span class="rxb-summary-label">Date</span><span class="rxb-summary-value">${escapeHtml(c.date)}</span></div><div class="rxb-summary-row"><span class="rxb-summary-label">Time</span><span class="rxb-summary-value">${escapeHtml(c.time)}</span></div></div></div>` : ''}<p style="margin-top:24px; font-size:13px; color:${THEME.colors.textMuted}">Questions? Call us at <strong>${CONFIG.companyPhone}</strong></p></div></div>`;
   }
 
@@ -615,8 +663,13 @@
         break;
       case 'select-customer-type':
         state.data.customerType = value;
-        state.path = value;
-        if (value === 'existing') { goToStep(STEPS.PHONE_LOOKUP); } else { goToStep(STEPS.SYSTEM_AGE); }
+        if (state.data.serviceType === 'message') {
+          state.path = value === 'existing' ? 'message_existing' : 'message_new';
+          if (value === 'existing') { goToStep(STEPS.PHONE_LOOKUP); } else { goToStep(STEPS.CONTACT_INFO); }
+        } else {
+          state.path = value;
+          if (value === 'existing') { goToStep(STEPS.PHONE_LOOKUP); } else { goToStep(STEPS.SYSTEM_AGE); }
+        }
         break;
       case 'lookup-phone':
         await lookupCustomer();
@@ -673,6 +726,7 @@
         }
         break;
       case 'confirm-booking': await confirmBooking(); break;
+      case 'submit-message': await submitMessage(); break;
     }
   }
 
@@ -704,6 +758,8 @@
   function saveFormData() {
     const issue = root.querySelector('#rxb-issue');
     if (issue) state.data.issue = issue.value.trim();
+    const message = root.querySelector('#rxb-message');
+    if (message) state.data.message = message.value.trim();
     const street = root.querySelector('#rxb-street');
     if (street) state.data.address.street = street.value.trim();
     const city = root.querySelector('#rxb-city');
@@ -729,11 +785,33 @@
       case STEPS.ADDRESS:
         if (!state.data.address.street || !state.data.address.city || !state.data.address.zip) { state.error = 'Please fill in your complete address.'; render(); return false; }
         if (state.data.address.zip.length < 5) { state.error = 'Please enter a valid 5-digit zip code.'; render(); return false; }
+        // Zip confirmation — first time out-of-area, warn and let them fix
+        if (!state.data._zipConfirmed && !SERVICE_AREA_ZIPS.has(state.data.address.zip)) {
+          state._zipWarning = true;
+          state.data._zipConfirmed = true; // Let them proceed on second attempt
+          state.error = `We don't currently service the ${state.data.address.zip} area. If this zip code is correct, click Continue again. Otherwise, please update it.`;
+          render(); return false;
+        }
+        state._zipWarning = false;
         return true;
       case STEPS.CONTACT_INFO:
         if (!state.data.name) { state.error = 'Please enter your name.'; render(); return false; }
         if (!state.data.phone || state.data.phone.length < 10) { state.error = 'Please enter a valid phone number.'; render(); return false; }
         if (!state.data.email || !state.data.email.includes('@') || !state.data.email.includes('.')) { state.error = 'Please enter a valid email address.'; render(); return false; }
+        // Message flow: validate zip on contact info
+        if (state.data.serviceType === 'message') {
+          if (!state.data.address.zip || state.data.address.zip.length < 5) { state.error = 'Please enter your 5-digit zip code.'; render(); return false; }
+          if (!state.data._zipConfirmed && !SERVICE_AREA_ZIPS.has(state.data.address.zip)) {
+            state._zipWarning = true;
+            state.data._zipConfirmed = true;
+            state.error = `We don't currently service the ${state.data.address.zip} area. If this zip code is correct, click Continue again. Otherwise, please update it.`;
+            render(); return false;
+          }
+          state._zipWarning = false;
+        }
+        return true;
+      case STEPS.MESSAGE:
+        if (!state.data.message || state.data.message.length < 3) { state.error = 'Please enter your message.'; render(); return false; }
         return true;
       default: return true;
     }
@@ -760,6 +838,11 @@
         state.data.name = result.customer.name || '';
         state.data.email = result.customer.email || '';
         if (result.customer.address) { state.data.address = result.customer.address; }
+        // Message flow: skip straight to message
+        if (state.data.serviceType === 'message') {
+          goToStep(STEPS.MESSAGE);
+          return;
+        }
         render();
       } else { state.error = result.message || 'No account found with that number.'; render(); }
     } catch (err) { state.loading = false; state.error = 'Failed to look up account. Please try again.'; render(); }
@@ -801,6 +884,37 @@
       if (result.success) { state.confirmation = result.confirmation; state.currentStep = STEPS.SUCCESS; render(); }
       else { state.error = result.message || 'Failed to confirm booking. Please call ' + CONFIG.companyPhone; render(); }
     } catch (err) { state.loading = false; state.error = 'Something went wrong. Please call ' + CONFIG.companyPhone + ' to complete your booking.'; render(); }
+  }
+
+  async function submitMessage() {
+    saveFormData();
+    if (!state.data.message || state.data.message.length < 3) { state.error = 'Please enter your message.'; render(); return; }
+    state.loading = true; state.error = null; render();
+    try {
+      const result = await api('POST', '/message', {
+        sessionId: state.sessionId,
+        name: state.data.name,
+        phone: state.data.phone,
+        email: state.data.email,
+        zip: state.data.address.zip,
+        message: state.data.message,
+        customerType: state.data.customerType,
+        customerId: state.data.customer?.id || null
+      });
+      state.loading = false;
+      if (result.success) {
+        state.confirmation = { type: 'message' };
+        state.currentStep = STEPS.SUCCESS;
+        render();
+      } else {
+        state.error = result.error || 'Failed to send message. Please call ' + CONFIG.companyPhone;
+        render();
+      }
+    } catch (err) {
+      state.loading = false;
+      state.error = 'Something went wrong. Please call ' + CONFIG.companyPhone;
+      render();
+    }
   }
 
   // ============================================
