@@ -925,8 +925,32 @@
           return;
         }
         render();
-      } else { state.error = result.message || 'No account found with that number.'; render(); }
-    } catch (err) { state.loading = false; state.error = 'Failed to look up account. Please try again.'; render(); }
+      } else {
+        // Not found → switch to new customer flow
+        switchToNewCustomer("Sorry, we weren't able to locate that number. No worries — we'll get you set up!");
+      }
+    } catch (err) {
+      state.loading = false;
+      // API error → switch to new customer flow
+      switchToNewCustomer("We had trouble looking up your account, but no worries — let's get you set up!");
+    }
+  }
+
+  // Gracefully switch from existing → new customer when phone lookup fails
+  function switchToNewCustomer(message) {
+    state.data.customerType = 'new';
+    state.loading = false;
+    state.error = message;
+    if (state.data.serviceType === 'message') {
+      state.path = 'message_new';
+      goToStep(STEPS.CONTACT_INFO);
+    } else if (state.data.serviceType === 'maintenance') {
+      state.path = 'maint_new';
+      goToStep(STEPS.PCC_ASK);
+    } else {
+      state.path = 'new';
+      goToStep(STEPS.SYSTEM_AGE);
+    }
   }
 
   async function loadAvailability() {
