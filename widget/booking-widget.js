@@ -90,7 +90,9 @@
     CONTACT_INFO: 'contact_info',
     CONFIRM: 'confirm',
     SUCCESS: 'success',
-    MESSAGE: 'message'
+    MESSAGE: 'message',
+    PCC_ASK: 'pcc_ask',
+    PCC_TYPE: 'pcc_type'
   };
 
   const STEP_FLOW = {
@@ -111,6 +113,26 @@
     message_existing: [
       STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.PHONE_LOOKUP,
       STEPS.MESSAGE, STEPS.SUCCESS
+    ],
+    // PCC member flows — skip system age, describe issue, and fee
+    pcc_new: [
+      STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.PCC_ASK, STEPS.PCC_TYPE,
+      STEPS.CALENDAR, STEPS.ADDRESS, STEPS.CONTACT_INFO, STEPS.CONFIRM
+    ],
+    pcc_existing: [
+      STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.PHONE_LOOKUP,
+      STEPS.PCC_ASK, STEPS.PCC_TYPE, STEPS.CALENDAR, STEPS.CONFIRM
+    ],
+    // Non-PCC maintenance (after answering No to PCC question)
+    maint_new: [
+      STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.PCC_ASK,
+      STEPS.SYSTEM_AGE, STEPS.CALENDAR, STEPS.DESCRIBE_ISSUE,
+      STEPS.ADDRESS, STEPS.CONTACT_INFO, STEPS.CONFIRM
+    ],
+    maint_existing: [
+      STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.PHONE_LOOKUP,
+      STEPS.PCC_ASK, STEPS.SYSTEM_AGE, STEPS.CALENDAR,
+      STEPS.DESCRIBE_ISSUE, STEPS.CONFIRM
     ]
   };
 
@@ -135,6 +157,8 @@
       selectedDate: null, selectedSlot: null, issue: '',
       name: '', phone: '', email: '', message: '',
       address: { street: '', city: '', state: 'CO', zip: '' },
+      isPccMember: null,
+      pccType: null, // 'cooling' or 'heating'
       _addrSuggestions: [],
       _addrPicked: false,
       _addrLoading: false,
@@ -422,6 +446,8 @@
       case STEPS.CALENDAR: return renderCalendar();
       case STEPS.DESCRIBE_ISSUE: return renderDescribeIssue();
       case STEPS.MESSAGE: return renderMessage();
+      case STEPS.PCC_ASK: return renderPccAsk();
+      case STEPS.PCC_TYPE: return renderPccType();
       case STEPS.ADDRESS: return renderAddress();
       case STEPS.CONTACT_INFO: return renderContactInfo();
       case STEPS.CONFIRM: return renderConfirm();
@@ -574,6 +600,22 @@
     return `<div class="rxb-card"><div class="rxb-card-title">Your Message</div><div class="rxb-card-subtitle">What would you like to tell our office?</div>${errorHtml}<div class="rxb-field"><label class="rxb-label">Message</label><textarea class="rxb-textarea" id="rxb-message" placeholder="Type your message or request here..." style="min-height: 120px;">${state.data.message || ''}</textarea></div><div class="rxb-nav" style="border-top:none; margin-top:24px; padding-top:0;"><button class="rxb-back-btn" data-action="back">\u2190 Back</button><button class="rxb-next-btn" data-action="submit-message">Send Message \u2709</button></div></div>`;
   }
 
+  function renderPccAsk() {
+    const options = [
+      { value: 'yes', icon: '\u2B50', label: 'Yes, I\'m a Member', desc: 'Schedule my included maintenance' },
+      { value: 'no', icon: '\u274C', label: 'No', desc: 'Continue with regular maintenance' }
+    ];
+    return `<div class="rxb-card"><div class="rxb-card-title">Priority Comfort Club</div><div class="rxb-card-subtitle">Are you a Priority Comfort Club member?</div><div class="rxb-options">${options.map(o => `<button class="rxb-option-btn${state.data.isPccMember === (o.value === 'yes') ? ' selected' : ''}" data-action="select-pcc" data-value="${o.value}"><div class="rxb-option-icon">${o.icon}</div><div><div class="rxb-option-label">${o.label}</div><div class="rxb-option-desc">${o.desc}</div></div></button>`).join('')}</div>${renderNav(true, false)}</div>`;
+  }
+
+  function renderPccType() {
+    const options = [
+      { value: 'cooling', icon: '\u2744\uFE0F', label: 'Cooling (A/C)', desc: 'Air conditioner maintenance' },
+      { value: 'heating', icon: '\uD83D\uDD25', label: 'Heating (Furnace)', desc: 'Furnace maintenance' }
+    ];
+    return `<div class="rxb-card"><div class="rxb-card-title">Which Maintenance?</div><div class="rxb-card-subtitle">Select the maintenance you'd like to schedule</div><div class="rxb-options">${options.map(o => `<button class="rxb-option-btn${state.data.pccType === o.value ? ' selected' : ''}" data-action="select-pcc-type" data-value="${o.value}"><div class="rxb-option-icon">${o.icon}</div><div><div class="rxb-option-label">${o.label}</div><div class="rxb-option-desc">${o.desc}</div></div></button>`).join('')}</div>${renderNav(true, false)}</div>`;
+  }
+
   function renderConfirm() {
     if (state.loading) {
       return `<div class="rxb-card"><div class="rxb-loading"><div class="rxb-spinner"></div><div class="rxb-loading-text">Confirming your appointment...</div></div></div>`;
@@ -584,6 +626,10 @@
     const dateDisplay = slotDay ? slotDay.displayDate : d.selectedDate;
     const timeDisplay = d.selectedSlot?.formatted || '';
     const serviceLabels = { repair: 'Repair Service', estimate: 'Free Estimate', maintenance: 'Maintenance' };
+    let serviceDisplay = serviceLabels[d.serviceType] || d.serviceType;
+    if (d.isPccMember && d.pccType) {
+      serviceDisplay = d.pccType === 'cooling' ? 'PCC A/C Maintenance (included)' : 'PCC Furnace Maintenance (included)';
+    }
     const ageLabels = { '0-2': '0\u20132 Years', '3-10': '3\u201310 Years', '10+': '10+ Years' };
     let addressStr = '';
     if (d.address && d.address.street) { addressStr = `${d.address.street}, ${d.address.city}, ${d.address.state} ${d.address.zip}`; }
@@ -666,6 +712,15 @@
         if (state.data.serviceType === 'message') {
           state.path = value === 'existing' ? 'message_existing' : 'message_new';
           if (value === 'existing') { goToStep(STEPS.PHONE_LOOKUP); } else { goToStep(STEPS.CONTACT_INFO); }
+        } else if (state.data.serviceType === 'maintenance') {
+          // Maintenance → PCC question (existing after phone lookup, new goes to PCC_ASK directly)
+          if (value === 'existing') {
+            state.path = 'maint_existing'; // Will switch to pcc_existing if they say yes
+            goToStep(STEPS.PHONE_LOOKUP);
+          } else {
+            state.path = 'maint_new';
+            goToStep(STEPS.PCC_ASK);
+          }
         } else {
           state.path = value;
           if (value === 'existing') { goToStep(STEPS.PHONE_LOOKUP); } else { goToStep(STEPS.SYSTEM_AGE); }
@@ -727,6 +782,27 @@
         break;
       case 'confirm-booking': await confirmBooking(); break;
       case 'submit-message': await submitMessage(); break;
+      case 'select-pcc':
+        if (value === 'yes') {
+          state.data.isPccMember = true;
+          state.path = state.data.customerType === 'existing' ? 'pcc_existing' : 'pcc_new';
+          goToStep(STEPS.PCC_TYPE);
+        } else {
+          state.data.isPccMember = false;
+          state.path = state.data.customerType === 'existing' ? 'maint_existing' : 'maint_new';
+          goToStep(STEPS.SYSTEM_AGE);
+        }
+        break;
+      case 'select-pcc-type':
+        state.data.pccType = value; // 'cooling' or 'heating'
+        state.data.issue = value === 'cooling'
+          ? 'PCC Annual Maintenance - Cooling (A/C)'
+          : 'PCC Annual Maintenance - Heating (Furnace)';
+        state.data.systemAge = '3-10'; // Default for maintenance tech routing
+        await updateSession({ serviceType: 'maintenance', customerType: state.data.customerType, systemAge: '3-10', pccType: value, isPccMember: true });
+        goToStep(STEPS.CALENDAR);
+        loadAvailability();
+        break;
     }
   }
 
@@ -843,6 +919,11 @@
           goToStep(STEPS.MESSAGE);
           return;
         }
+        // Maintenance existing: go to PCC question
+        if (state.data.serviceType === 'maintenance') {
+          goToStep(STEPS.PCC_ASK);
+          return;
+        }
         render();
       } else { state.error = result.message || 'No account found with that number.'; render(); }
     } catch (err) { state.loading = false; state.error = 'Failed to look up account. Please try again.'; render(); }
@@ -878,7 +959,7 @@
   async function confirmBooking() {
     saveFormData(); state.loading = true; state.error = null; render();
     try {
-      await updateSession({ serviceType: state.data.serviceType, customerType: state.data.customerType, systemAge: state.data.systemAge, selectedDate: state.data.selectedDate, selectedSlot: state.data.selectedSlot, issue: state.data.issue, name: state.data.name, phone: state.data.phone, email: state.data.email, address: state.data.address });
+      await updateSession({ serviceType: state.data.serviceType, customerType: state.data.customerType, systemAge: state.data.systemAge, selectedDate: state.data.selectedDate, selectedSlot: state.data.selectedSlot, issue: state.data.issue, name: state.data.name, phone: state.data.phone, email: state.data.email, address: state.data.address, isPccMember: state.data.isPccMember || false, pccType: state.data.pccType || null });
       const result = await api('POST', '/confirm', { sessionId: state.sessionId });
       state.loading = false;
       if (result.success) { state.confirmation = result.confirmation; state.currentStep = STEPS.SUCCESS; render(); }

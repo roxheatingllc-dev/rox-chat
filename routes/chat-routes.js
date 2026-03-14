@@ -151,6 +151,19 @@ const STATE_QUICK_REPLIES = {
   msg_confirm_zip: [
     { label: '✅ Yes, that\'s correct', value: 'Yes' },
     { label: '✏️ Enter different zip', value: 'No' }
+  ],
+  // Priority Comfort Club
+  pcc_ask: [
+    { label: '⭐ Yes, I\'m a member', value: 'Yes' },
+    { label: '❌ No', value: 'No' }
+  ],
+  pcc_annual: [
+    { label: '✅ Yes, schedule maintenance', value: 'Yes' },
+    { label: '❌ No, something else', value: 'No' }
+  ],
+  pcc_system_type: [
+    { label: '❄️ Cooling (A/C)', value: 'Cooling' },
+    { label: '🔥 Heating (Furnace)', value: 'Heating' }
   ]
 };
 
