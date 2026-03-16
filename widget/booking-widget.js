@@ -499,7 +499,7 @@
     }
     const errorHtml = state.error ? `<div class="rxb-error">${state.error}</div>` : '';
     if (!state.availability || state.availability.availableDays.length === 0) {
-      return `<div class="rxb-card"><div class="rxb-card-title">Pick a Date & Time</div>${errorHtml}<div style="text-align:center; padding: 30px 0;"><p style="font-size: 16px; margin-bottom: 12px;">No available times found in the next 4 weeks.</p><p style="font-size: 14px; color: ${THEME.colors.textSecondary}">Please call us at <strong>${CONFIG.companyPhone}</strong> and we'll find a time that works.</p></div>${renderNav(true, false)}</div>`;
+      return `<div class="rxb-card"><div class="rxb-card-title">Pick a Date & Time</div>${errorHtml}<div style="text-align:center; padding: 30px 0;"><p style="font-size: 16px; margin-bottom: 12px;">No available times found in the next 4 weeks.</p><p style="font-size: 14px; color: ${THEME.colors.textSecondary}; margin-bottom: 20px;">Please call us at <strong>${CONFIG.companyPhone}</strong> and we'll find a time that works.</p><button class="rxb-next-btn" style="width:100%" data-action="book-further-out">\uD83D\uDCE9 Send a Request for a Later Date</button></div>${renderNav(true, false)}</div>`;
     }
 
     const availDates = new Set(state.availability.availableDays.map(d => d.date));
@@ -568,7 +568,8 @@
     const maxDate = new Date(); maxDate.setDate(maxDate.getDate() + 28);
     const canNext = new Date(calYear, calMonth + 1, 1) <= maxDate;
 
-    return `<div class="rxb-card"><div class="rxb-card-title">Pick a Date & Time</div><div class="rxb-card-subtitle">Select an available day, then choose a time slot</div>${errorHtml}<div class="rxb-calendar"><div class="rxb-cal-header"><button class="rxb-cal-nav-btn" data-action="cal-prev" ${!canPrev ? 'disabled' : ''}>\u2039</button><div class="rxb-cal-title">${monthName}</div><button class="rxb-cal-nav-btn" data-action="cal-next" ${!canNext ? 'disabled' : ''}>\u203A</button></div><div class="rxb-cal-grid">${daysHtml}</div></div>${slotsHtml}${renderNav(true, !!state.data.selectedSlot)}</div>`;
+    const furtherOutHtml = `<div style="text-align:center; margin-top:16px; padding-top:12px; border-top:1px solid ${THEME.colors.cardBorder};"><button data-action="book-further-out" style="background:none; border:none; color:${THEME.colors.primary}; font-size:13px; cursor:pointer; padding:8px 0;">Need to book further out? Send us a request \u2192</button></div>`;
+    return `<div class="rxb-card"><div class="rxb-card-title">Pick a Date & Time</div><div class="rxb-card-subtitle">Select an available day, then choose a time slot</div>${errorHtml}<div class="rxb-calendar"><div class="rxb-cal-header"><button class="rxb-cal-nav-btn" data-action="cal-prev" ${!canPrev ? 'disabled' : ''}>\u2039</button><div class="rxb-cal-title">${monthName}</div><button class="rxb-cal-nav-btn" data-action="cal-next" ${!canNext ? 'disabled' : ''}>\u203A</button></div><div class="rxb-cal-grid">${daysHtml}</div></div>${slotsHtml}${furtherOutHtml}${renderNav(true, !!state.data.selectedSlot)}</div>`;
   }
 
   function renderDescribeIssue() {
@@ -802,6 +803,20 @@
         await updateSession({ serviceType: 'maintenance', customerType: state.data.customerType, systemAge: '3-10', pccType: value, isPccMember: true });
         goToStep(STEPS.CALENDAR);
         loadAvailability();
+        break;
+      case 'book-further-out':
+        // Switch to message flow — pre-fill with scheduling request context
+        state.data.serviceType = 'message';
+        state.data.message = `I'd like to schedule ${state.data.issue || state.data.serviceType || 'an appointment'} for a date beyond the next 4 weeks. Please contact me to arrange a time.`;
+        if (state.data.customer || (state.data.name && state.data.phone)) {
+          // Already have contact info → go straight to message
+          state.path = state.data.customer ? 'message_existing' : 'message_new';
+          goToStep(STEPS.MESSAGE);
+        } else {
+          // Need contact info first
+          state.path = 'message_new';
+          goToStep(STEPS.CONTACT_INFO);
+        }
         break;
     }
   }
