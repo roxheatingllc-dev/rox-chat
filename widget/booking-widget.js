@@ -83,6 +83,7 @@
     SERVICE_TYPE: 'service_type',
     CUSTOMER_TYPE: 'customer_type',
     PHONE_LOOKUP: 'phone_lookup',
+    QUICK_INFO: 'quick_info', // Name + phone early capture
     SYSTEM_AGE: 'system_age',
     CALENDAR: 'calendar',
     DESCRIBE_ISSUE: 'describe_issue',
@@ -97,9 +98,9 @@
 
   const STEP_FLOW = {
     new: [
-      STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.SYSTEM_AGE,
-      STEPS.CALENDAR, STEPS.DESCRIBE_ISSUE, STEPS.ADDRESS,
-      STEPS.CONTACT_INFO, STEPS.CONFIRM
+      STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.QUICK_INFO,
+      STEPS.SYSTEM_AGE, STEPS.CALENDAR, STEPS.DESCRIBE_ISSUE,
+      STEPS.ADDRESS, STEPS.CONTACT_INFO, STEPS.CONFIRM
     ],
     existing: [
       STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.PHONE_LOOKUP,
@@ -114,20 +115,19 @@
       STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.PHONE_LOOKUP,
       STEPS.MESSAGE, STEPS.SUCCESS
     ],
-    // PCC member flows — skip system age, describe issue, and fee
     pcc_new: [
-      STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.PCC_ASK, STEPS.PCC_TYPE,
-      STEPS.CALENDAR, STEPS.ADDRESS, STEPS.CONTACT_INFO, STEPS.CONFIRM
+      STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.QUICK_INFO,
+      STEPS.PCC_ASK, STEPS.PCC_TYPE, STEPS.CALENDAR,
+      STEPS.ADDRESS, STEPS.CONTACT_INFO, STEPS.CONFIRM
     ],
     pcc_existing: [
       STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.PHONE_LOOKUP,
       STEPS.PCC_ASK, STEPS.PCC_TYPE, STEPS.CALENDAR, STEPS.CONFIRM
     ],
-    // Non-PCC maintenance (after answering No to PCC question)
     maint_new: [
-      STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.PCC_ASK,
-      STEPS.SYSTEM_AGE, STEPS.CALENDAR, STEPS.DESCRIBE_ISSUE,
-      STEPS.ADDRESS, STEPS.CONTACT_INFO, STEPS.CONFIRM
+      STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.QUICK_INFO,
+      STEPS.PCC_ASK, STEPS.SYSTEM_AGE, STEPS.CALENDAR,
+      STEPS.DESCRIBE_ISSUE, STEPS.ADDRESS, STEPS.CONTACT_INFO, STEPS.CONFIRM
     ],
     maint_existing: [
       STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.PHONE_LOOKUP,
@@ -442,6 +442,7 @@
       case STEPS.SERVICE_TYPE: return renderServiceType();
       case STEPS.CUSTOMER_TYPE: return renderCustomerType();
       case STEPS.PHONE_LOOKUP: return renderPhoneLookup();
+      case STEPS.QUICK_INFO: return renderQuickInfo();
       case STEPS.SYSTEM_AGE: return renderSystemAge();
       case STEPS.CALENDAR: return renderCalendar();
       case STEPS.DESCRIBE_ISSUE: return renderDescribeIssue();
@@ -481,6 +482,11 @@
       return `<div class="rxb-card"><div class="rxb-loading"><div class="rxb-spinner"></div><div class="rxb-loading-text">Looking up your account...</div></div></div>`;
     }
     return `<div class="rxb-card"><div class="rxb-card-title">Let's find your account</div><div class="rxb-card-subtitle">Enter the phone number on your account</div>${errorHtml}${customerHtml}<div class="rxb-field"><label class="rxb-label">Phone Number</label><input type="tel" class="rxb-input" id="rxb-phone" placeholder="(720) 555-1234" value="${formatPhone(state.data.phone)}" maxlength="14" autocomplete="tel"></div>${!state.data.customer ? `<button class="rxb-next-btn" style="width:100%" data-action="lookup-phone" ${!state.data.phone || state.data.phone.length < 10 ? 'disabled' : ''}>Look Up Account</button>` : ''}${renderNav(true, !!state.data.customer)}</div>`;
+  }
+
+  function renderQuickInfo() {
+    const errorHtml = state.error ? `<div class="rxb-error">${state.error}</div>` : '';
+    return `<div class="rxb-card"><div class="rxb-card-title">Quick Info</div><div class="rxb-card-subtitle">In case we get disconnected, we'd love to be able to reach you</div>${errorHtml}<div class="rxb-field"><label class="rxb-label">Full Name</label><input type="text" class="rxb-input" id="rxb-name" placeholder="John Smith" value="${state.data.name}" autocomplete="name"></div><div class="rxb-field"><label class="rxb-label">Phone Number</label><input type="tel" class="rxb-input" id="rxb-contact-phone" placeholder="(720) 555-1234" value="${formatPhone(state.data.phone)}" maxlength="14" autocomplete="tel"></div>${renderNav(true, true)}</div>`;
   }
 
   function renderSystemAge() {
@@ -713,18 +719,13 @@
         if (state.data.serviceType === 'message') {
           state.path = value === 'existing' ? 'message_existing' : 'message_new';
           if (value === 'existing') { goToStep(STEPS.PHONE_LOOKUP); } else { goToStep(STEPS.CONTACT_INFO); }
-        } else if (state.data.serviceType === 'maintenance') {
-          // Maintenance → PCC question (existing after phone lookup, new goes to PCC_ASK directly)
-          if (value === 'existing') {
-            state.path = 'maint_existing'; // Will switch to pcc_existing if they say yes
-            goToStep(STEPS.PHONE_LOOKUP);
-          } else {
-            state.path = 'maint_new';
-            goToStep(STEPS.PCC_ASK);
-          }
+        } else if (value === 'existing') {
+          state.path = state.data.serviceType === 'maintenance' ? 'maint_existing' : 'existing';
+          goToStep(STEPS.PHONE_LOOKUP);
         } else {
-          state.path = value;
-          if (value === 'existing') { goToStep(STEPS.PHONE_LOOKUP); } else { goToStep(STEPS.SYSTEM_AGE); }
+          // ALL new customers → QUICK_INFO first (name + phone)
+          state.path = state.data.serviceType === 'maintenance' ? 'maint_new' : 'new';
+          goToStep(STEPS.QUICK_INFO);
         }
         break;
       case 'lookup-phone':
@@ -870,6 +871,10 @@
       case STEPS.PHONE_LOOKUP:
         if (!state.data.customer && !state.data.phone) { state.error = 'Please enter your phone number.'; render(); return false; }
         return !!state.data.customer;
+      case STEPS.QUICK_INFO:
+        if (!state.data.name || state.data.name.trim().length < 2) { state.error = 'Please enter your name.'; render(); return false; }
+        if (!state.data.phone || state.data.phone.length < 10) { state.error = 'Please enter a valid phone number.'; render(); return false; }
+        return true;
       case STEPS.CALENDAR:
         if (!state.data.selectedSlot) { state.error = 'Please select a date and time slot.'; render(); return false; }
         return true;
@@ -959,12 +964,10 @@
     if (state.data.serviceType === 'message') {
       state.path = 'message_new';
       goToStep(STEPS.CONTACT_INFO);
-    } else if (state.data.serviceType === 'maintenance') {
-      state.path = 'maint_new';
-      goToStep(STEPS.PCC_ASK);
     } else {
-      state.path = 'new';
-      goToStep(STEPS.SYSTEM_AGE);
+      // Go to QUICK_INFO — phone is pre-filled from lookup attempt, just need name
+      state.path = state.data.serviceType === 'maintenance' ? 'maint_new' : 'new';
+      goToStep(STEPS.QUICK_INFO);
     }
   }
 
@@ -1068,24 +1071,79 @@
     await startSession();
     render();
 
-    // Send abandon signal when customer leaves the page
-    window.addEventListener('beforeunload', () => {
+    // ============================================
+    // EXIT-INTENT CAPTURE
+    // Shows a modal when user tries to leave without providing contact info
+    // ============================================
+    let _exitShown = false;
+    function showExitCapture() {
+      if (_exitShown) return;
+      if (state.currentStep === STEPS.SUCCESS || state.currentStep === STEPS.SERVICE_TYPE || state.currentStep === STEPS.CUSTOMER_TYPE) return;
+      // Only show if we DON'T have both name + phone yet
+      if (state.data.name && state.data.phone && state.data.phone.length >= 10) return;
+      if (state.data.customer) return; // existing customer already identified
+      _exitShown = true;
+
+      const overlay = document.createElement('div');
+      overlay.id = 'rxb-exit-overlay';
+      overlay.innerHTML = `
+        <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;">
+          <div style="background:white;border-radius:12px;padding:32px;max-width:400px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);text-align:center;">
+            <div style="font-size:32px;margin-bottom:12px;">\uD83D\uDCDE</div>
+            <h3 style="margin:0 0 8px;font-size:20px;color:#1a1a1a;">Before you go!</h3>
+            <p style="margin:0 0 20px;font-size:14px;color:#666;">Leave your info and our office will reach out to help you get scheduled.</p>
+            <input type="text" id="rxb-exit-name" placeholder="Your name" value="${state.data.name || ''}" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;margin-bottom:10px;font-size:14px;box-sizing:border-box;">
+            <input type="tel" id="rxb-exit-phone" placeholder="Phone number" value="${state.data.phone ? formatPhone(state.data.phone) : ''}" maxlength="14" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;margin-bottom:16px;font-size:14px;box-sizing:border-box;">
+            <button id="rxb-exit-submit" style="width:100%;padding:14px;background:${THEME.colors.primary};color:white;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;margin-bottom:10px;">Have Us Call You</button>
+            <button id="rxb-exit-close" style="width:100%;padding:10px;background:none;border:none;color:#999;font-size:13px;cursor:pointer;">No thanks, I'll call later</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+
+      overlay.querySelector('#rxb-exit-submit').addEventListener('click', async () => {
+        const nameEl = overlay.querySelector('#rxb-exit-name');
+        const phoneEl = overlay.querySelector('#rxb-exit-phone');
+        const name = nameEl.value.trim();
+        const phone = phoneEl.value.replace(/\D/g, '');
+        if (!name || phone.length < 10) {
+          nameEl.style.borderColor = !name ? '#e74c3c' : '#ddd';
+          phoneEl.style.borderColor = phone.length < 10 ? '#e74c3c' : '#ddd';
+          return;
+        }
+        // Save to state
+        state.data.name = name;
+        state.data.phone = phone;
+        // Send message to office
+        try {
+          await api('POST', '/message', {
+            sessionId: state.sessionId,
+            name, phone,
+            email: state.data.email || '',
+            zip: state.data.address?.zip || '',
+            message: 'Customer was browsing the booking page and left before completing. Please follow up.',
+            customerType: state.data.customerType || 'new',
+            customerId: state.data.customer?.id || null
+          });
+        } catch (e) { console.error('[ROX Booking] Exit capture send failed:', e.message); }
+        overlay.innerHTML = '<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;"><div style="background:white;border-radius:12px;padding:32px;max-width:400px;width:90%;text-align:center;"><div style="font-size:32px;margin-bottom:12px;">\u2705</div><h3 style="margin:0 0 8px;">Got it!</h3><p style="color:#666;font-size:14px;">Someone from our team will reach out shortly.</p></div></div>';
+        setTimeout(() => overlay.remove(), 3000);
+      });
+
+      overlay.querySelector('#rxb-exit-close').addEventListener('click', () => overlay.remove());
+    }
+
+    // Mouse leaves viewport (desktop) — exit intent
+    document.addEventListener('mouseout', (e) => {
+      if (e.clientY <= 0 && !_exitShown) showExitCapture();
+    });
+
+    // Back button / page unload — also trigger
+    window.addEventListener('beforeunload', (e) => {
+      if (!_exitShown && state.data.name && state.data.phone) return; // already have info
+      // Can't show modal in beforeunload, but sendBeacon with whatever we have
       if (!state.sessionId || state.currentStep === STEPS.SUCCESS) return;
       const payload = JSON.stringify({ sessionId: state.sessionId, reason: 'unload' });
       navigator.sendBeacon(`${CONFIG.serverUrl}/api/booking/abandon`, new Blob([payload], { type: 'application/json' }));
-    });
-    // Also detect visibility change (tab switch on mobile)
-    let _hiddenTimer = null;
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden && state.sessionId && state.currentStep !== STEPS.SUCCESS) {
-        _hiddenTimer = setTimeout(() => {
-          const payload = JSON.stringify({ sessionId: state.sessionId, reason: 'close' });
-          navigator.sendBeacon(`${CONFIG.serverUrl}/api/booking/abandon`, new Blob([payload], { type: 'application/json' }));
-        }, 60000); // 1 min hidden = abandoned
-      } else if (_hiddenTimer) {
-        clearTimeout(_hiddenTimer);
-        _hiddenTimer = null;
-      }
     });
 
     console.log('[ROX Booking] Widget initialized');
