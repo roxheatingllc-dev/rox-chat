@@ -1,5 +1,5 @@
 /**
- * ROX Booking Widget v1.2 - Self-Service Scheduling Wizard
+ * ROX Booking Widget v1.3 - Self-Service Scheduling Wizard
  * 
  * Embed on any website:
  * <script>
@@ -14,7 +14,9 @@
  * <div id="rox-booking"></div>
  * <script src="https://rox-chat-production.up.railway.app/widget/booking-widget.js"></script>
  * 
- * v1.2 Changes:
+ * v1.3 Changes:
+ *   - ADD: Pricing banner on calendar (repair $148, maintenance $128, PCC, estimate free)
+ *   - ADD: "Just to Confirm" messaging when contact info was already captured
  *   - FIX: Sort time slots chronologically after deduplication (renderCalendar)
  * 
  * Multi-tenant ready: pass tenantId in config for SaaS deployment
@@ -386,6 +388,11 @@
       .rxb-spinner { width: 36px; height: 36px; border: 3px solid ${C.progressBg}; border-top-color: ${C.primary}; border-radius: 50%; animation: rxbSpin 0.8s linear infinite; }
       @keyframes rxbSpin { to { transform: rotate(360deg); } }
       .rxb-loading-text { font-size: 14px; color: ${C.textSecondary}; }
+      .rxb-pricing-banner { padding: 14px 18px; border-radius: ${R - 2}px; font-size: 14px; line-height: 1.5; margin-bottom: 16px; }
+      .rxb-pricing-banner.repair { background: #FFF7ED; border: 1px solid #FDBA74; color: #9A3412; }
+      .rxb-pricing-banner.maintenance { background: #F0FDF4; border: 1px solid #86EFAC; color: #166534; }
+      .rxb-pricing-banner.estimate { background: #EFF6FF; border: 1px solid #93C5FD; color: #1E40AF; }
+      .rxb-pricing-banner strong { font-weight: 600; }
       .rxb-error { padding: 14px 18px; background: ${C.errorBg}; border: 1px solid ${C.errorBorder}; border-radius: ${R - 2}px; color: ${C.errorText}; font-size: 14px; margin-bottom: 16px; }
       .rxb-customer-card { padding: 16px 20px; background: ${C.successBg}; border: 1px solid ${C.successBorder}; border-radius: ${R - 2}px; margin-bottom: 20px; }
       .rxb-customer-card h4 { font-size: 15px; font-weight: 600; color: ${C.successText}; margin-bottom: 4px; }
@@ -499,13 +506,35 @@
     return `<div class="rxb-card"><div class="rxb-card-title">How old is your system?</div><div class="rxb-card-subtitle">This helps us send the right technician</div><div class="rxb-options">${options.map(o => `<button class="rxb-option-btn${state.data.systemAge === o.value ? ' selected' : ''}" data-action="select-age" data-value="${o.value}"><div class="rxb-option-icon">${o.icon}</div><div><div class="rxb-option-label">${o.label}</div></div></button>`).join('')}</div>${renderNav(true, false)}</div>`;
   }
 
+  // ── Pricing banner for calendar step ──
+  // MULTI-TENANT: Move fee amounts to tenantConfig.fees in SaaS version
+  function getPricingBanner() {
+    const svc = state.data.serviceType;
+    const isPcc = state.data.isPccMember;
+
+    if (svc === 'repair') {
+      return '<div class="rxb-pricing-banner repair"><strong>\uD83D\uDCB0 Service Call Fee: $148</strong><br>The $148 service call fee is waived if you proceed with repairs.</div>';
+    }
+    if (svc === 'maintenance') {
+      if (isPcc) {
+        return '<div class="rxb-pricing-banner maintenance"><strong>\u2B50 PCC Member \u2014 No Charge!</strong><br>Your maintenance is included with your Priority Comfort Club membership.</div>';
+      }
+      return '<div class="rxb-pricing-banner maintenance"><strong>\uD83D\uDEE0\uFE0F Tune-Up Fee: $128</strong><br>One-time tune-up is $128. Ask about our <strong>Priority Comfort Club</strong> \u2014 just $149/year and includes 2 annual tune-ups (spring A/C + fall furnace).</div>';
+    }
+    if (svc === 'estimate') {
+      return '<div class="rxb-pricing-banner estimate"><strong>\uD83D\uDCCA Estimates Are Always Free!</strong><br>No charge for your in-home estimate.</div>';
+    }
+    return '';
+  }
+
   function renderCalendar() {
     if (state.loading) {
       return `<div class="rxb-card"><div class="rxb-loading"><div class="rxb-spinner"></div><div class="rxb-loading-text">Checking available times...</div></div></div>`;
     }
     const errorHtml = state.error ? `<div class="rxb-error">${state.error}</div>` : '';
     if (!state.availability || state.availability.availableDays.length === 0) {
-      return `<div class="rxb-card"><div class="rxb-card-title">Pick a Date & Time</div>${errorHtml}<div style="text-align:center; padding: 30px 0;"><p style="font-size: 16px; margin-bottom: 12px;">No available times found in the next 4 weeks.</p><p style="font-size: 14px; color: ${THEME.colors.textSecondary}; margin-bottom: 20px;">Please call us at <strong>${CONFIG.companyPhone}</strong> and we'll find a time that works.</p><button class="rxb-next-btn" style="width:100%" data-action="book-further-out">\uD83D\uDCE9 Send a Request for a Later Date</button></div>${renderNav(true, false)}</div>`;
+      const pricingHtml = getPricingBanner();
+      return `<div class="rxb-card"><div class="rxb-card-title">Pick a Date & Time</div>${pricingHtml}${errorHtml}<div style="text-align:center; padding: 30px 0;"><p style="font-size: 16px; margin-bottom: 12px;">No available times found in the next 4 weeks.</p><p style="font-size: 14px; color: ${THEME.colors.textSecondary}; margin-bottom: 20px;">Please call us at <strong>${CONFIG.companyPhone}</strong> and we'll find a time that works.</p><button class="rxb-next-btn" style="width:100%" data-action="book-further-out">\uD83D\uDCE9 Send a Request for a Later Date</button></div>${renderNav(true, false)}</div>`;
     }
 
     const availDates = new Set(state.availability.availableDays.map(d => d.date));
@@ -575,7 +604,8 @@
     const canNext = new Date(calYear, calMonth + 1, 1) <= maxDate;
 
     const furtherOutHtml = `<div style="text-align:center; margin-top:16px; padding-top:12px; border-top:1px solid ${THEME.colors.cardBorder};"><button data-action="book-further-out" style="background:none; border:none; color:${THEME.colors.primary}; font-size:13px; cursor:pointer; padding:8px 0;">Need to book further out? Send us a request \u2192</button></div>`;
-    return `<div class="rxb-card"><div class="rxb-card-title">Pick a Date & Time</div><div class="rxb-card-subtitle">Select an available day, then choose a time slot</div>${errorHtml}<div class="rxb-calendar"><div class="rxb-cal-header"><button class="rxb-cal-nav-btn" data-action="cal-prev" ${!canPrev ? 'disabled' : ''}>\u2039</button><div class="rxb-cal-title">${monthName}</div><button class="rxb-cal-nav-btn" data-action="cal-next" ${!canNext ? 'disabled' : ''}>\u203A</button></div><div class="rxb-cal-grid">${daysHtml}</div></div>${slotsHtml}${furtherOutHtml}${renderNav(true, !!state.data.selectedSlot)}</div>`;
+    const pricingHtml = getPricingBanner();
+    return `<div class="rxb-card"><div class="rxb-card-title">Pick a Date & Time</div><div class="rxb-card-subtitle">Select an available day, then choose a time slot</div>${pricingHtml}${errorHtml}<div class="rxb-calendar"><div class="rxb-cal-header"><button class="rxb-cal-nav-btn" data-action="cal-prev" ${!canPrev ? 'disabled' : ''}>\u2039</button><div class="rxb-cal-title">${monthName}</div><button class="rxb-cal-nav-btn" data-action="cal-next" ${!canNext ? 'disabled' : ''}>\u203A</button></div><div class="rxb-cal-grid">${daysHtml}</div></div>${slotsHtml}${furtherOutHtml}${renderNav(true, !!state.data.selectedSlot)}</div>`;
   }
 
   function renderDescribeIssue() {
@@ -589,14 +619,18 @@
 
   function renderContactInfo() {
     const isMessage = state.data.serviceType === 'message';
-    const subtitle = isMessage ? 'So our office can follow up with you' : 'So we can reach you about your appointment';
+    // Detect if name + phone were already collected via QUICK_INFO step
+    // If so, show "just to confirm" messaging instead of generic subtitle
+    const hasEarlyCapture = !isMessage && state.data.name && state.data.phone;
+    const title = hasEarlyCapture ? 'Just to Confirm' : 'Your Contact Info';
+    const subtitle = isMessage ? 'So our office can follow up with you' : hasEarlyCapture ? "Please verify your information below so we're sure to have the right contact details." : 'So we can reach you about your appointment';
     const errorHtml = state.error ? `<div class="rxb-error">${state.error}</div>` : '';
     const zipWarning = state._zipWarning ? `<div class="rxb-error" style="background: #FFFBE6; border-color: #FFD666; color: #7A6200;">I just want to verify — we don't currently service the ${state.data.address.zip} area. Is this zip correct?</div>` : '';
     let zipField = '';
     if (isMessage) {
       zipField = `<div class="rxb-field"><label class="rxb-label">Zip Code</label><input type="text" class="rxb-input" id="rxb-zip" placeholder="80202" value="${state.data.address.zip}" maxlength="5" autocomplete="postal-code"></div>`;
     }
-    return `<div class="rxb-card"><div class="rxb-card-title">Your Contact Info</div><div class="rxb-card-subtitle">${subtitle}</div>${errorHtml}${zipWarning}<div class="rxb-field"><label class="rxb-label">Full Name</label><input type="text" class="rxb-input" id="rxb-name" placeholder="John Smith" value="${state.data.name}" autocomplete="name"></div><div class="rxb-field"><label class="rxb-label">Phone Number</label><input type="tel" class="rxb-input" id="rxb-contact-phone" placeholder="(720) 555-1234" value="${formatPhone(state.data.phone)}" maxlength="14" autocomplete="tel"></div><div class="rxb-field"><label class="rxb-label">Email Address</label><input type="email" class="rxb-input" id="rxb-email" placeholder="john@example.com" value="${state.data.email}" autocomplete="email"></div>${zipField}${renderNav(true, true)}</div>`;
+    return `<div class="rxb-card"><div class="rxb-card-title">${title}</div><div class="rxb-card-subtitle">${subtitle}</div>${errorHtml}${zipWarning}<div class="rxb-field"><label class="rxb-label">Full Name</label><input type="text" class="rxb-input" id="rxb-name" placeholder="John Smith" value="${escapeHtml(state.data.name || '')}" autocomplete="name"></div><div class="rxb-field"><label class="rxb-label">Phone Number</label><input type="tel" class="rxb-input" id="rxb-contact-phone" placeholder="(720) 555-1234" value="${formatPhone(state.data.phone)}" maxlength="14" autocomplete="tel"></div><div class="rxb-field"><label class="rxb-label">Email Address</label><input type="email" class="rxb-input" id="rxb-email" placeholder="john@example.com" value="${escapeHtml(state.data.email || '')}" autocomplete="email"></div>${zipField}${renderNav(true, true)}</div>`;
   }
 
   function renderMessage() {
