@@ -163,6 +163,7 @@
       address: { street: '', city: '', state: 'CO', zip: '' },
       isPccMember: null,
       pccType: null, // 'cooling' or 'heating'
+      _tcpaConsent: false, // TCPA/CTIA consent checkbox
       _addrSuggestions: [],
       _addrPicked: false,
       _addrLoading: false,
@@ -397,6 +398,9 @@
       .rxb-pricing-banner.maintenance { background: #F0FDF4; border: 1px solid #86EFAC; color: #166534; }
       .rxb-pricing-banner.estimate { background: #EFF6FF; border: 1px solid #93C5FD; color: #1E40AF; }
       .rxb-pricing-banner strong { font-weight: 600; }
+      .rxb-consent { display: flex; align-items: flex-start; gap: 10px; margin-top: 18px; padding: 14px 16px; background: ${C.primaryLight}; border: 1px solid ${C.primaryBorder}; border-radius: ${R - 2}px; cursor: pointer; }
+      .rxb-consent input[type="checkbox"] { margin-top: 3px; width: 18px; height: 18px; flex-shrink: 0; accent-color: ${C.primary}; cursor: pointer; }
+      .rxb-consent-text { font-size: 12px; line-height: 1.5; color: ${C.textSecondary}; }
       .rxb-error { padding: 14px 18px; background: ${C.errorBg}; border: 1px solid ${C.errorBorder}; border-radius: ${R - 2}px; color: ${C.errorText}; font-size: 14px; margin-bottom: 16px; }
       .rxb-customer-card { padding: 16px 20px; background: ${C.successBg}; border: 1px solid ${C.successBorder}; border-radius: ${R - 2}px; margin-bottom: 20px; }
       .rxb-customer-card h4 { font-size: 15px; font-weight: 600; color: ${C.successText}; margin-bottom: 4px; }
@@ -497,7 +501,8 @@
 
   function renderQuickInfo() {
     const errorHtml = state.error ? `<div class="rxb-error">${state.error}</div>` : '';
-    return `<div class="rxb-card"><div class="rxb-card-title">Quick Info</div><div class="rxb-card-subtitle">In case we get disconnected, we'd love to be able to reach you</div>${errorHtml}<div class="rxb-field"><label class="rxb-label">Full Name</label><input type="text" class="rxb-input" id="rxb-name" placeholder="John Smith" value="${state.data.name}" autocomplete="name"></div><div class="rxb-field"><label class="rxb-label">Phone Number</label><input type="tel" class="rxb-input" id="rxb-contact-phone" placeholder="(720) 555-1234" value="${formatPhone(state.data.phone)}" maxlength="14" autocomplete="tel"></div>${renderNav(true, true)}</div>`;
+    const consentHtml = `<label class="rxb-consent"><input type="checkbox" id="rxb-tcpa" ${state.data._tcpaConsent ? 'checked' : ''}><span class="rxb-consent-text">By submitting this form you consent to receive SMS and email messages from ${CONFIG.companyName} at the number and email provided. Consent is not a condition of purchase. Msg &amp; data rates may apply.</span></label>`;
+    return `<div class="rxb-card"><div class="rxb-card-title">Quick Info</div><div class="rxb-card-subtitle">In case we get disconnected, we'd love to be able to reach you</div>${errorHtml}<div class="rxb-field"><label class="rxb-label">Full Name</label><input type="text" class="rxb-input" id="rxb-name" placeholder="John Smith" value="${state.data.name}" autocomplete="name"></div><div class="rxb-field"><label class="rxb-label">Phone Number</label><input type="tel" class="rxb-input" id="rxb-contact-phone" placeholder="(720) 555-1234" value="${formatPhone(state.data.phone)}" maxlength="14" autocomplete="tel"></div>${consentHtml}${renderNav(true, true)}</div>`;
   }
 
   function renderSystemAge() {
@@ -911,6 +916,8 @@
     if (email) state.data.email = email.value.trim();
     const contactPhone = root.querySelector('#rxb-contact-phone');
     if (contactPhone) state.data.phone = contactPhone.value.replace(/\D/g, '');
+    const tcpa = root.querySelector('#rxb-tcpa');
+    if (tcpa) state.data._tcpaConsent = tcpa.checked;
   }
 
   function validateStep() {
@@ -921,6 +928,7 @@
       case STEPS.QUICK_INFO:
         if (!state.data.name || state.data.name.trim().length < 2) { state.error = 'Please enter your name.'; render(); return false; }
         if (!state.data.phone || state.data.phone.length < 10) { state.error = 'Please enter a valid phone number.'; render(); return false; }
+        if (!state.data._tcpaConsent) { state.error = 'Please check the consent box to continue.'; render(); return false; }
         return true;
       case STEPS.CALENDAR:
         if (!state.data.selectedSlot) { state.error = 'Please select a date and time slot.'; render(); return false; }
