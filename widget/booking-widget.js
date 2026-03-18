@@ -14,7 +14,8 @@
  * <div id="rox-booking"></div>
  * <script src="https://rox-chat-production.up.railway.app/widget/booking-widget.js"></script>
  * 
- * v1.3 Changes:
+ * v1.4 Changes:
+ *   - FIX: Push name+phone to server after QUICK_INFO so abandon emails have contact info
  *   - ADD: Pricing banner on calendar (repair $148, maintenance $128, PCC, estimate free)
  *   - ADD: "Just to Confirm" messaging when contact info was already captured
  *   - FIX: Sort time slots chronologically after deduplication (renderCalendar)
@@ -872,6 +873,13 @@
     const flow = STEP_FLOW[state.path || 'new'];
     const idx = flow.indexOf(state.currentStep);
     if (!validateStep()) return;
+
+    // Push name + phone to server immediately after QUICK_INFO
+    // so abandon emails have contact info if customer leaves later
+    if (state.currentStep === STEPS.QUICK_INFO) {
+      updateSession({ name: state.data.name, phone: state.data.phone });
+    }
+
     if (idx < flow.length - 1) {
       const nextStep = flow[idx + 1];
       state.currentStep = nextStep;
