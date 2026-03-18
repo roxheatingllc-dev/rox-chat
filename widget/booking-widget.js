@@ -1,5 +1,5 @@
 /**
- * ROX Booking Widget v1.3 - Self-Service Scheduling Wizard
+ * ROX Booking Widget v1.5 - Self-Service Scheduling Wizard
  * 
  * Embed on any website:
  * <script>
@@ -16,6 +16,7 @@
  * 
  * v1.4 Changes:
  *   - FIX: Push name+phone to server after QUICK_INFO so abandon emails have contact info
+ *   - ADD: Weather forecast temps on calendar days (Open-Meteo, 16-day, no API key)
  *   - ADD: Pricing banner on calendar (repair $148, maintenance $128, PCC, estimate free)
  *   - ADD: "Just to Confirm" messaging when contact info was already captured
  *   - FIX: Sort time slots chronologically after deduplication (renderCalendar)
@@ -168,7 +169,8 @@
       _zipConfirmed: false,
       customer: null
     },
-    availability: null, loading: false, error: null, confirmation: null
+    availability: null, loading: false, error: null, confirmation: null,
+    _weather: null // Map of YYYY-MM-DD → high temp in °F (from Open-Meteo)
   };
 
   // ============================================
@@ -357,7 +359,8 @@
       .rxb-cal-nav-btn:disabled { opacity: 0.3; cursor: default; }
       .rxb-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
       .rxb-cal-dow { font-size: 11px; font-weight: 600; color: ${C.textMuted}; text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 0; }
-      .rxb-cal-day { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 500; border-radius: 10px; border: none; background: transparent; color: ${C.textMuted}; cursor: default; transition: all 0.15s ease; }
+      .rxb-cal-day { aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 14px; font-weight: 500; border-radius: 10px; border: none; background: transparent; color: ${C.textMuted}; cursor: default; transition: all 0.15s ease; gap: 1px; padding: 2px 0; }
+      .rxb-cal-day .rxb-cal-temp { font-size: 9px; font-weight: 400; opacity: 0.7; line-height: 1; }
       .rxb-cal-day.empty { visibility: hidden; }
       .rxb-cal-day.today { background: ${C.calendarToday}; color: ${C.text}; }
       .rxb-cal-day.available { background: ${C.primaryLight}; color: ${C.primary}; font-weight: 600; cursor: pointer; }
@@ -565,7 +568,9 @@
       if (isAvail && !isPast) cls += ' available';
       if (isSelected) cls += ' selected';
       const clickable = isAvail && !isPast;
-      daysHtml += `<button class="${cls}" ${clickable ? `data-action="select-date" data-value="${dateStr}"` : 'disabled'}>${d}</button>`;
+      const temp = state._weather && state._weather[dateStr];
+      const tempHtml = temp ? `<span class="rxb-cal-temp">${temp}°</span>` : '';
+      daysHtml += `<button class="${cls}" ${clickable ? `data-action="select-date" data-value="${dateStr}"` : 'disabled'}>${d}${tempHtml}</button>`;
     }
 
     // Time slots for selected date
@@ -1013,8 +1018,33 @@
     }
   }
 
+  // Fetch 16-day forecast from Open-Meteo (free, no API key)
+  // Denver coordinates: 39.74, -104.99
+  // Fire-and-forget: weather is nice-to-have, not blocking
+  async function loadWeather() {
+    try {
+      const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=39.74&longitude=-104.99&daily=temperature_2m_max&temperature_unit=fahrenheit&timezone=America/Denver&forecast_days=16');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.daily?.time && data.daily?.temperature_2m_max) {
+        const weather = {};
+        for (let i = 0; i < data.daily.time.length; i++) {
+          weather[data.daily.time[i]] = Math.round(data.daily.temperature_2m_max[i]);
+        }
+        state._weather = weather;
+        // Re-render if calendar is already showing
+        if (state.currentStep === STEPS.CALENDAR && !state.loading) render();
+      }
+    } catch (e) {
+      // Weather is optional — fail silently
+      console.warn('[ROX Booking] Weather fetch failed:', e.message);
+    }
+  }
+
   async function loadAvailability() {
     state.loading = true; state.error = null; render();
+    // Fetch weather in background (non-blocking)
+    if (!state._weather) loadWeather();
     try {
       let tag = 'service tech 3-10'; // Default for 3-10 year repairs
       if (state.data.serviceType === 'maintenance') {
