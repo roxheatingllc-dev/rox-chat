@@ -713,7 +713,7 @@
     const phoneInput = root.querySelector('#rxb-phone');
     if (phoneInput) {
       phoneInput.addEventListener('input', (e) => {
-        const digits = e.target.value.replace(/\D/g, '').substring(0, 10);
+        const digits = cleanPhoneDigits(e.target.value);
         state.data.phone = digits;
         e.target.value = formatPhone(digits);
         const btn = root.querySelector('[data-action="lookup-phone"]');
@@ -723,7 +723,7 @@
     const contactPhone = root.querySelector('#rxb-contact-phone');
     if (contactPhone) {
       contactPhone.addEventListener('input', (e) => {
-        const digits = e.target.value.replace(/\D/g, '').substring(0, 10);
+        const digits = cleanPhoneDigits(e.target.value);
         state.data.phone = digits;
         e.target.value = formatPhone(digits);
       });
@@ -915,7 +915,7 @@
     const email = root.querySelector('#rxb-email');
     if (email) state.data.email = email.value.trim();
     const contactPhone = root.querySelector('#rxb-contact-phone');
-    if (contactPhone) state.data.phone = contactPhone.value.replace(/\D/g, '');
+    if (contactPhone) state.data.phone = cleanPhoneDigits(contactPhone.value);
     const tcpa = root.querySelector('#rxb-tcpa');
     if (tcpa) state.data._tcpaConsent = tcpa.checked;
   }
@@ -1123,9 +1123,16 @@
   // ============================================
   // UTILITY FUNCTIONS
   // ============================================
+  // Strip country code "1" from 11-digit numbers (autofill adds +1)
+  function cleanPhoneDigits(raw) {
+    let d = raw.replace(/\D/g, '');
+    if (d.length === 11 && d.startsWith('1')) d = d.substring(1);
+    return d.substring(0, 10);
+  }
+
   function formatPhone(digits) {
     if (!digits) return '';
-    const d = digits.replace(/\D/g, '').substring(0, 10);
+    const d = cleanPhoneDigits(digits);
     if (d.length <= 3) return `(${d}`;
     if (d.length <= 6) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
     return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
