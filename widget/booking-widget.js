@@ -121,12 +121,12 @@
     ],
     pcc_new: [
       STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.QUICK_INFO,
-      STEPS.PCC_ASK, STEPS.PCC_TYPE, STEPS.CALENDAR,
+      STEPS.PCC_ASK, STEPS.PCC_TYPE, STEPS.SYSTEM_AGE, STEPS.CALENDAR,
       STEPS.ADDRESS, STEPS.CONTACT_INFO, STEPS.CONFIRM
     ],
     pcc_existing: [
       STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.PHONE_LOOKUP,
-      STEPS.PCC_ASK, STEPS.PCC_TYPE, STEPS.CALENDAR, STEPS.CONFIRM
+      STEPS.PCC_ASK, STEPS.PCC_TYPE, STEPS.SYSTEM_AGE, STEPS.CALENDAR, STEPS.CONFIRM
     ],
     maint_new: [
       STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.QUICK_INFO,
@@ -845,10 +845,8 @@
         state.data.issue = value === 'cooling'
           ? 'PCC Annual Maintenance - Cooling (A/C)'
           : 'PCC Annual Maintenance - Heating (Furnace)';
-        state.data.systemAge = '3-10'; // Default for maintenance tech routing
-        await updateSession({ serviceType: 'maintenance', customerType: state.data.customerType, systemAge: '3-10', pccType: value, isPccMember: true });
-        goToStep(STEPS.CALENDAR);
-        loadAvailability();
+        await updateSession({ serviceType: 'maintenance', customerType: state.data.customerType, pccType: value, isPccMember: true });
+        goToStep(STEPS.SYSTEM_AGE); // Ask system age for proper tech routing
         break;
       case 'book-further-out':
         // Switch to message flow — pre-fill with scheduling request context
