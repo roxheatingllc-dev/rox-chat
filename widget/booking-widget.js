@@ -757,6 +757,12 @@
     switch (action) {
       case 'select-service':
         state.data.serviceType = value;
+        // Clear PCC data when switching service type — prevents stale PCC flags
+        // from creating jobs as estimates (or vice versa)
+        if (value !== 'maintenance') {
+          state.data.isPccMember = null;
+          state.data.pccType = null;
+        }
         goToStep(STEPS.CUSTOMER_TYPE);
         break;
       case 'select-customer-type':
