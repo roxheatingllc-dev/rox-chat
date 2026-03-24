@@ -393,6 +393,19 @@
         transition: all 0.15s ease;
         white-space: nowrap;
       }
+      .rox-quick-reply.has-subtitle {
+        white-space: normal;
+        text-align: center;
+        line-height: 1.3;
+      }
+      .rox-qr-subtitle {
+        display: block;
+        font-size: 9px;
+        font-weight: 400;
+        opacity: 0.7;
+        letter-spacing: 0.3px;
+        margin-top: 1px;
+      }
       .rox-quick-reply:hover {
         background: ${C.quickReplyHoverBg};
         color: ${C.quickReplyHoverText};
@@ -557,15 +570,15 @@
       <div class="rox-welcome-title">Hi there! 👋</div>
       <div class="rox-welcome-subtitle">How can we help you today?</div>
       <div class="rox-welcome-actions">
-        <button class="rox-welcome-btn" data-msg="I need to schedule a repair">
+        <button class="rox-welcome-btn" data-msg="My system is not working">
           <span class="rox-welcome-btn-icon">🔧</span>
-          <span class="rox-welcome-btn-label">Repair Service</span>
+          <span class="rox-welcome-btn-label">System Not Working</span>
           <span class="rox-welcome-btn-desc">Fix a broken system</span>
         </button>
         <button class="rox-welcome-btn" data-msg="I'd like an estimate for a new system">
           <span class="rox-welcome-btn-icon">📊</span>
           <span class="rox-welcome-btn-label">Free Estimate</span>
-          <span class="rox-welcome-btn-desc">New installation</span>
+          <span class="rox-welcome-btn-desc">New installations only</span>
         </button>
         <button class="rox-welcome-btn" data-msg="I need to schedule maintenance">
           <span class="rox-welcome-btn-icon">🛠️</span>
@@ -685,7 +698,10 @@
       quickReplies.forEach(r => {
         const label = typeof r === 'string' ? r : r.label;
         const value = typeof r === 'string' ? r : (r.value || r.label);
-        html += `<button class="rox-quick-reply" data-value="${escapeHtml(value)}">${escapeHtml(label)}</button>`;
+        const subtitle = (typeof r === 'object' && r.subtitle) ? r.subtitle : '';
+        const cls = subtitle ? 'rox-quick-reply has-subtitle' : 'rox-quick-reply';
+        const subtitleHtml = subtitle ? `<span class="rox-qr-subtitle">${escapeHtml(subtitle)}</span>` : '';
+        html += `<button class="${cls}" data-value="${escapeHtml(value)}">${escapeHtml(label)}${subtitleHtml}</button>`;
       });
       html += '</div>';
     }
