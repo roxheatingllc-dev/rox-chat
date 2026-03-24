@@ -474,8 +474,8 @@
 
   function renderServiceType() {
     const options = [
-      { value: 'repair', icon: '\uD83D\uDD27', label: 'Repair Service', desc: 'Fix a broken or malfunctioning system' },
-      { value: 'estimate', icon: '\uD83D\uDCCB', label: 'Free Estimate', desc: 'Get a quote for a new system installation' },
+      { value: 'repair', icon: '\uD83D\uDD27', label: 'System Not Working', desc: 'Fix a broken or malfunctioning system' },
+      { value: 'estimate', icon: '\uD83D\uDCCB', label: 'Free Estimate', desc: 'New installations only' },
       { value: 'maintenance', icon: '\uD83D\uDEE1\uFE0F', label: 'Maintenance', desc: 'Annual tune-up and system check' },
       { value: 'message', icon: '\uD83D\uDCE9', label: 'Send a Message', desc: 'Send a message or request to our office' }
     ];
@@ -677,7 +677,7 @@
     const slotDay = state.availability?.availableDays?.find(day => day.date === d.selectedDate);
     const dateDisplay = slotDay ? slotDay.displayDate : d.selectedDate;
     const timeDisplay = d.selectedSlot?.formatted || '';
-    const serviceLabels = { repair: 'Repair Service', estimate: 'Free Estimate', maintenance: 'Maintenance' };
+    const serviceLabels = { repair: 'System Not Working', estimate: 'Free Estimate', maintenance: 'Maintenance' };
     let serviceDisplay = serviceLabels[d.serviceType] || d.serviceType;
     if (d.isPccMember && d.pccType) {
       serviceDisplay = d.pccType === 'cooling' ? 'PCC A/C Maintenance (included)' : 'PCC Furnace Maintenance (included)';
