@@ -1,5 +1,5 @@
 /**
- * ROX Booking Widget v1.5 - Self-Service Scheduling Wizard
+ * ROX Booking Widget v1.6 - Self-Service Scheduling Wizard
  * 
  * Embed on any website:
  * <script>
@@ -97,18 +97,20 @@
     SUCCESS: 'success',
     MESSAGE: 'message',
     PCC_ASK: 'pcc_ask',
-    PCC_TYPE: 'pcc_type'
+    PCC_TYPE: 'pcc_type',
+    ROX_INSTALLED: 'rox_installed',
+    WARRANTY_HANDOFF: 'warranty_handoff'
   };
 
   const STEP_FLOW = {
     new: [
       STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.QUICK_INFO,
-      STEPS.SYSTEM_AGE, STEPS.CALENDAR, STEPS.DESCRIBE_ISSUE,
+      STEPS.SYSTEM_AGE, STEPS.ROX_INSTALLED, STEPS.CALENDAR, STEPS.DESCRIBE_ISSUE,
       STEPS.ADDRESS, STEPS.CONTACT_INFO, STEPS.CONFIRM
     ],
     existing: [
       STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.PHONE_LOOKUP,
-      STEPS.SYSTEM_AGE, STEPS.CALENDAR, STEPS.DESCRIBE_ISSUE,
+      STEPS.SYSTEM_AGE, STEPS.ROX_INSTALLED, STEPS.CALENDAR, STEPS.DESCRIBE_ISSUE,
       STEPS.CONFIRM
     ],
     message_new: [
@@ -459,6 +461,8 @@
       case STEPS.PHONE_LOOKUP: return renderPhoneLookup();
       case STEPS.QUICK_INFO: return renderQuickInfo();
       case STEPS.SYSTEM_AGE: return renderSystemAge();
+      case STEPS.ROX_INSTALLED: return renderRoxInstalled();
+      case STEPS.WARRANTY_HANDOFF: return renderWarrantyHandoff();
       case STEPS.CALENDAR: return renderCalendar();
       case STEPS.DESCRIBE_ISSUE: return renderDescribeIssue();
       case STEPS.MESSAGE: return renderMessage();
@@ -513,6 +517,86 @@
       { value: '10+', icon: '\u2753', label: 'Not Sure' }
     ];
     return `<div class="rxb-card"><div class="rxb-card-title">How old is your system?</div><div class="rxb-card-subtitle">This helps us send the right technician</div><div class="rxb-options">${options.map(o => `<button class="rxb-option-btn${state.data.systemAge === o.value ? ' selected' : ''}" data-action="select-age" data-value="${o.value}"><div class="rxb-option-icon">${o.icon}</div><div><div class="rxb-option-label">${o.label}</div></div></button>`).join('')}</div>${renderNav(true, false)}</div>`;
+  }
+
+  // ============================================
+  // ROX INSTALLED CHECK — renders after system_age for 0-2 year systems
+  // ============================================
+  function renderRoxInstalled() {
+    const options = [
+      { value: 'yes',      icon: '\u2705', label: 'Yes, ROX installed it' },
+      { value: 'no',       icon: '\u274C', label: 'No' },
+      { value: 'not-sure', icon: '\u2753', label: "I'm not sure" }
+    ];
+    return '<div class="rxb-card">'
+      + '<div class="rxb-card-title">Was your system installed by ROX Heating & Air?</div>'
+      + '<div class="rxb-card-subtitle">This helps us determine if your service may be covered under warranty</div>'
+      + '<div class="rxb-options">'
+      + options.map(o =>
+          '<button class="rxb-option-btn" data-action="rox-installed" data-value="' + o.value + '">'
+          + '<div class="rxb-option-icon">' + o.icon + '</div>'
+          + '<div><div class="rxb-option-label">' + o.label + '</div></div>'
+          + '</button>'
+        ).join('')
+      + '</div>'
+      + renderNav(true, false)
+      + '</div>';
+  }
+
+  function renderWarrantyHandoff() {
+    return '<div class="rxb-card">'
+      + '<div class="rxb-success">'
+      + '<div class="rxb-success-icon" style="font-size:32px; background:none; border:none;">\uD83D\uDD27</div>'
+      + '<h3>We\'ll Be in Touch!</h3>'
+      + '<p>We have all of your information and our team will reach out to you as soon as possible.</p>'
+      + '<p style="margin-top:16px; font-size:13px; color:' + THEME.colors.textMuted + '">'
+      + 'Questions? Call us at <strong>' + CONFIG.companyPhone + '</strong></p>'
+      + '</div>'
+      + '</div>';
+  }
+
+  // Called when customer taps Yes / No / Not Sure on the ROX installed step.
+  // Yes  → POST /warranty-check → show WARRANTY_HANDOFF screen.
+  // No / Not sure → proceed to calendar as normal.
+  async function handleRoxInstalledAction(value) {
+    state.data.roxInstalled = value;
+
+    if (value === 'yes') {
+      state.loading = true;
+      state.error   = null;
+      render();
+
+      try {
+        const result = await api('POST', '/warranty-check', {
+          sessionId:   state.sessionId,
+          roxInstalled: true,
+          serviceType: state.data.serviceType,
+          systemAge:   state.data.systemAge,
+          issue:       state.data.issue       || '',
+          name:        state.data.name        || '',
+          phone:       state.data.phone       || '',
+          email:       state.data.email       || ''
+        });
+
+        state.loading = false;
+
+        if (result && result.warrantyHandoff) {
+          goToStep(STEPS.WARRANTY_HANDOFF);
+        } else {
+          // Server says not a warranty — continue to calendar
+          goToStep(STEPS.CALENDAR);
+          loadAvailability();
+        }
+      } catch (err) {
+        state.loading = false;
+        state.error   = 'Something went wrong. Please try again or call ' + CONFIG.companyPhone;
+        render();
+      }
+    } else {
+      // Not ROX installed — proceed to calendar
+      goToStep(STEPS.CALENDAR);
+      loadAvailability();
+    }
   }
 
   // ── Pricing banner for calendar step ──
@@ -785,8 +869,17 @@
       case 'select-age':
         state.data.systemAge = value;
         await updateSession({ serviceType: state.data.serviceType, customerType: state.data.customerType, systemAge: value });
-        goToStep(STEPS.CALENDAR);
-        loadAvailability();
+        // 0-2 year systems: ask if ROX installed before showing calendar
+        // ROX installed = potential warranty = team handoff (no AI scheduling)
+        if (value === '0-2') {
+          goToStep(STEPS.ROX_INSTALLED);
+        } else {
+          goToStep(STEPS.CALENDAR);
+          loadAvailability();
+        }
+        break;
+      case 'rox-installed':
+        await handleRoxInstalledAction(value);
         break;
       case 'select-date':
         state.data.selectedDate = value;

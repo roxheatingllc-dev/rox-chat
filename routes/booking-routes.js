@@ -139,6 +139,21 @@ router.post('/confirm', rateLimit, async (req, res) => {
 });
 
 // ========================================
+// POST /api/booking/warranty-check
+// Called by widget when 0-2yr customer says ROX installed their system.
+// Proxies to engine, which sends the office email and terminates the session.
+// ========================================
+router.post('/warranty-check', rateLimit, async (req, res) => {
+  try {
+    const result = await bookingAdapter.request('POST', '/warranty-check', req.body);
+    res.json(result);
+  } catch (err) {
+    console.error('[BookingRoutes] Warranty-check error:', err.message);
+    res.status(500).json({ error: 'Failed to process warranty check' });
+  }
+});
+
+// ========================================
 // POST /api/booking/message — Send message to office (proxy)
 // ========================================
 router.post('/message', rateLimit, async (req, res) => {
