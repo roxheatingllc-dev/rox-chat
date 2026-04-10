@@ -1,5 +1,5 @@
 /**
- * ROX Booking Widget v1.6 - Self-Service Scheduling Wizard
+ * ROX Booking Widget v1.7 - Self-Service Scheduling Wizard
  * 
  * Embed on any website:
  * <script>
@@ -99,7 +99,8 @@
     PCC_ASK: 'pcc_ask',
     PCC_TYPE: 'pcc_type',
     ROX_INSTALLED: 'rox_installed',
-    WARRANTY_HANDOFF: 'warranty_handoff'
+    WARRANTY_HANDOFF: 'warranty_handoff',
+    DECLINED: 'declined'          // Shown when a service type is not supported
   };
 
   const STEP_FLOW = {
@@ -173,7 +174,11 @@
       customer: null
     },
     availability: null, loading: false, error: null, confirmation: null,
-    _weather: null // Map of YYYY-MM-DD → high temp in °F (from Open-Meteo)
+    _weather: null,      // Map of YYYY-MM-DD → high temp in °F (from Open-Meteo)
+    _isAfterHours: false, // Set at session start from server
+    _isSunday: false,     // Set at session start from server
+    _declineMsg: null,    // Message shown on DECLINED step
+    _declineOfferEstimate: false // Whether to offer free estimate on decline screen
   };
 
   // ============================================
@@ -463,6 +468,7 @@
       case STEPS.SYSTEM_AGE: return renderSystemAge();
       case STEPS.ROX_INSTALLED: return renderRoxInstalled();
       case STEPS.WARRANTY_HANDOFF: return renderWarrantyHandoff();
+      case STEPS.DECLINED: return renderDeclined();
       case STEPS.CALENDAR: return renderCalendar();
       case STEPS.DESCRIBE_ISSUE: return renderDescribeIssue();
       case STEPS.MESSAGE: return renderMessage();
@@ -483,7 +489,12 @@
       { value: 'maintenance', icon: '\uD83D\uDEE1\uFE0F', label: 'Maintenance', desc: 'Annual tune-up and system check' },
       { value: 'message', icon: '\uD83D\uDCE9', label: 'Send a Message', desc: 'Send a message or request to our office' }
     ];
-    return `<div class="rxb-card"><div class="rxb-card-title">What do you need help with?</div><div class="rxb-card-subtitle">Select the service you're looking for</div><div class="rxb-options">${options.map(o => `<button class="rxb-option-btn${state.data.serviceType === o.value ? ' selected' : ''}" data-action="select-service" data-value="${o.value}"><div class="rxb-option-icon">${o.icon}</div><div><div class="rxb-option-label">${o.label}</div><div class="rxb-option-desc">${o.desc}</div></div></button>`).join('')}</div></div>`;
+    // After-hours banner — shown when the office is closed at the time the widget was opened.
+    // The server detects this at /start and sends back isAfterHours + isSunday flags.
+    const afterHoursHtml = state._isAfterHours
+      ? `<div style="background:#EFF6FF;border:1px solid #93C5FD;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:14px;color:#1E40AF;">\uD83C\uDF19 <strong>${state._isSunday ? "We're closed today" : "We're currently closed"}</strong> \u2014 but you can still book an appointment here and we'll confirm ${state._isSunday ? 'Monday morning' : 'first thing in the morning'}!</div>`
+      : '';
+    return `<div class="rxb-card"><div class="rxb-card-title">What do you need help with?</div><div class="rxb-card-subtitle">Select the service you're looking for</div>${afterHoursHtml}<div class="rxb-options">${options.map(o => `<button class="rxb-option-btn${state.data.serviceType === o.value ? ' selected' : ''}" data-action="select-service" data-value="${o.value}"><div class="rxb-option-icon">${o.icon}</div><div><div class="rxb-option-label">${o.label}</div><div class="rxb-option-desc">${o.desc}</div></div></button>`).join('')}</div></div>`;
   }
 
   function renderCustomerType() {
@@ -553,6 +564,28 @@
       + 'Questions? Call us at <strong>' + CONFIG.companyPhone + '</strong></p>'
       + '</div>'
       + '</div>';
+  }
+
+  // ============================================
+  // DECLINED STEP — shown when we can't service a request
+  // e.g. duct cleaning, water heater 10+ years
+  // If offerEstimate is true, customer can pivot to a free estimate.
+  // ============================================
+  function renderDeclined() {
+    const msg = state._declineMsg || "Unfortunately we're unable to service this request at this time.";
+    const C = THEME.colors;
+    const offerHtml = state._declineOfferEstimate
+      ? `<p style="margin-top:14px;font-size:14px;color:${C.textSecondary}">We can schedule a <strong>free estimate</strong> to discuss your replacement options!</p>`
+        + `<button data-action="decline-estimate" style="margin-top:16px;padding:14px 28px;font-size:15px;font-weight:600;color:#fff;background:${C.primary};border:none;border-radius:10px;cursor:pointer;width:100%">Schedule Free Estimate \u2192</button>`
+        + `<div style="margin-top:10px"><button data-action="decline-restart" style="background:none;border:none;color:${C.textMuted};font-size:13px;cursor:pointer;padding:6px 0">No thanks, start over</button></div>`
+      : `<p style="margin-top:16px;font-size:13px;color:${C.textMuted}">Questions? Call us at <strong>${CONFIG.companyPhone}</strong></p>`
+        + `<div style="margin-top:14px"><button data-action="decline-restart" style="background:none;border:none;color:${C.primary};font-size:13px;cursor:pointer;text-decoration:underline">\u2190 Start over</button></div>`;
+    return `<div class="rxb-card"><div class="rxb-success">`
+      + `<div class="rxb-success-icon" style="background:#FFF7ED;border-color:#FDBA74;color:#C2410C;font-size:26px;">\u26A0\uFE0F</div>`
+      + `<h3 style="color:${C.text}">We're Sorry</h3>`
+      + `<p style="color:${C.textSecondary}">${escapeHtml(msg)}</p>`
+      + offerHtml
+      + `</div></div>`;
   }
 
   // Called when customer taps Yes / No / Not Sure on the ROX installed step.
@@ -682,6 +715,9 @@
         // Without this, slots from multiple techs display in arbitrary order
         uniqueSlots.sort((a, b) => new Date(a.start) - new Date(b.start));
 
+        // Saturday fee disclosure — match voice and chat channel behavior
+        const isSaturdayRepair = dayData.dayOfWeek === 'Saturday' && state.data.serviceType === 'repair';
+
         const shortLabel = (s) => {
           try {
             const st = new Date(s.start);
@@ -690,7 +726,7 @@
             return fmt(st) + ' - ' + fmt(en);
           } catch (e) { return s.formatted; }
         };
-        slotsHtml = `<div class="rxb-slots"><div class="rxb-slots-title">Available times for ${dayData.displayDate}</div><div class="rxb-slots-grid">${uniqueSlots.map(s => `<button class="rxb-slot-btn${state.data.selectedSlot && state.data.selectedSlot.start === s.start ? ' selected' : ''}" data-action="select-slot" data-idx="${s.originalIdx}">${shortLabel(s)}</button>`).join('')}</div></div>`;
+        slotsHtml = `<div class="rxb-slots"><div class="rxb-slots-title">Available times for ${dayData.displayDate}</div>${isSaturdayRepair ? `<div style="background:#FFF7ED;border:1px solid #FDBA74;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:14px;color:#9A3412;"><strong>\uD83D\uDCC5 Weekend Service Call</strong> \u2014 Weekend service calls are billed at $148, waived if you proceed with repairs.</div>` : ''}<div class="rxb-slots-grid">${uniqueSlots.map(s => `<button class="rxb-slot-btn${state.data.selectedSlot && state.data.selectedSlot.start === s.start ? ' selected' : ''}" data-action="select-slot" data-idx="${s.originalIdx}">${shortLabel(s)}</button>`).join('')}</div></div>`;
       }
     }
 
@@ -903,7 +939,7 @@
         render();
         break;
       case 'back': goBack(); break;
-      case 'next': goNext(); break;
+      case 'next': await goNext(); break;
       case 'pick-address':
         const addrIdx = parseInt(value);
         const suggestion = state._addrSuggestions?.[addrIdx];
@@ -925,6 +961,27 @@
           }
           render();
         }
+        break;
+      case 'decline-estimate':
+        // Customer wants to pivot to a free estimate after service declined
+        state.data.serviceType = 'estimate';
+        state.data.issue = state.data.issue || 'Replacement estimate';
+        state.availability = null; // reset so the right tech tag is used
+        state._declineMsg = null;
+        state._declineOfferEstimate = false;
+        state.path = state.data.customerType === 'existing' ? 'existing' : 'new';
+        goToStep(STEPS.CALENDAR);
+        loadAvailability();
+        break;
+      case 'decline-restart':
+        // Customer doesn't want the estimate — restart from service select
+        state._declineMsg = null;
+        state._declineOfferEstimate = false;
+        state.data.serviceType = null;
+        state.data.systemAge = null;
+        state.data.issue = '';
+        state.availability = null;
+        goToStep(STEPS.SERVICE_TYPE);
         break;
       case 'confirm-booking': await confirmBooking(); break;
       case 'submit-message': await submitMessage(); break;
@@ -975,7 +1032,7 @@
     if (idx > 0) { state.currentStep = flow[idx - 1]; state.error = null; render(); }
   }
 
-  function goNext() {
+  async function goNext() {
     saveFormData();
     const flow = STEP_FLOW[state.path || 'new'];
     const idx = flow.indexOf(state.currentStep);
@@ -985,6 +1042,32 @@
     // so abandon emails have contact info if customer leaves later
     if (state.currentStep === STEPS.QUICK_INFO) {
       updateSession({ name: state.data.name, phone: state.data.phone });
+    }
+
+    // Declined-service checks at DESCRIBE_ISSUE step
+    // Client-side duct cleaning and server-side water heater 10+ decline
+    if (state.currentStep === STEPS.DESCRIBE_ISSUE && state.data.issue) {
+      const lower = state.data.issue.toLowerCase();
+
+      // Duct cleaning (client-side — no server round-trip needed)
+      if (/\b(duct\s*clean|air\s*duct\s*clean|ductwork\s*clean)\b/.test(lower) ||
+          (lower.includes('clean') && lower.includes('duct'))) {
+        state._declineMsg = "We don't offer duct cleaning services at this time. Please call " + CONFIG.companyPhone + " if you have questions.";
+        state._declineOfferEstimate = false;
+        goToStep(STEPS.DECLINED);
+        return;
+      }
+
+      // Water heater 10+ yr repair (server-side — checks issue + systemAge together)
+      if (state.data.serviceType === 'repair' && state.data.systemAge === '10+') {
+        const result = await updateSession({ issue: state.data.issue });
+        if (result && result.declined === 'water_heater_10plus') {
+          state._declineMsg = result.declineMessage || "We're unable to service water heaters over 10 years old. Manufacturers recommend replacing them every 10\u201312 years.";
+          state._declineOfferEstimate = result.offerEstimate || false;
+          goToStep(STEPS.DECLINED);
+          return;
+        }
+      }
     }
 
     if (idx < flow.length - 1) {
@@ -1072,7 +1155,10 @@
     try {
       const result = await api('POST', '/start', { tenantId: CONFIG.tenantId });
       state.sessionId = result.sessionId;
-      console.log('[ROX Booking] Session started:', state.sessionId);
+      // Capture after-hours status so the widget can show a note
+      state._isAfterHours = result.isAfterHours || false;
+      state._isSunday     = result.isSunday     || false;
+      console.log(`[ROX Booking] Session started: ${state.sessionId} (afterHours=${state._isAfterHours})`);
     } catch (err) { console.error('[ROX Booking] Failed to start session:', err.message); }
   }
 
@@ -1171,8 +1257,11 @@
   }
 
   async function updateSession(updates) {
-    try { await api('POST', '/update-session', { sessionId: state.sessionId, updates, step: state.currentStep }); }
-    catch (err) { console.warn('[ROX Booking] Session update failed:', err.message); }
+    try {
+      const result = await api('POST', '/update-session', { sessionId: state.sessionId, updates, step: state.currentStep });
+      return result;
+    }
+    catch (err) { console.warn('[ROX Booking] Session update failed:', err.message); return null; }
   }
 
   async function confirmBooking() {
