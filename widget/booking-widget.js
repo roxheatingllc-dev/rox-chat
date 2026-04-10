@@ -1,5 +1,5 @@
 /**
- * ROX Booking Widget v1.7 - Self-Service Scheduling Wizard
+ * ROX Booking Widget v1.8 - Self-Service Scheduling Wizard
  * 
  * Embed on any website:
  * <script>
@@ -639,6 +639,11 @@
     const isPcc = state.data.isPccMember;
 
     if (svc === 'repair') {
+      // 10+ year systems get the reduced $49 diagnostic fee (sales tech visit)
+      // Matches voice channel getServiceFee() and chat getRepairFeeInfo() behavior.
+      if (state.data.systemAge === '10+') {
+        return '<div class="rxb-pricing-banner repair"><strong>\uD83D\uDD0D Diagnostic Fee: $49</strong><br>The $49 diagnostic fee is waived if you proceed with repairs. One of our comfort advisors will assess your system.</div>';
+      }
       return '<div class="rxb-pricing-banner repair"><strong>\uD83D\uDCB0 Service Call Fee: $148</strong><br>The $148 service call fee is waived if you proceed with repairs.</div>';
     }
     if (svc === 'maintenance') {
