@@ -1,5 +1,5 @@
 /**
- * ROX Club Booking Widget v1.0.3
+ * ROX Club Booking Widget v1.0.4
  * =====================================================================
  *
  * Standalone booking wizard for Priority Comfort Club members invited
@@ -197,8 +197,22 @@
     return div.innerHTML;
   }
 
+  // Normalize a raw phone string to 10 digits.
+  // Handles the common autofill / paste case where browsers deliver
+  // the number in E.164 format (+17205480200) or with a leading
+  // country code (17205480200). North-American area codes never
+  // start with '1', so any 11-digit value beginning with '1' is
+  // safely interpreted as country-code + 10-digit number.
+  function normalizePhoneDigits(raw) {
+    let d = String(raw || '').replace(/\D/g, '');
+    if (d.length === 11 && d.charAt(0) === '1') {
+      d = d.slice(1);
+    }
+    return d.slice(0, 10);
+  }
+
   function formatPhoneInput(raw) {
-    const d = String(raw || '').replace(/\D/g, '').slice(0, 10);
+    const d = normalizePhoneDigits(raw);
     if (d.length === 0) return '';
     if (d.length <= 3)  return `(${d}`;
     if (d.length <= 6)  return `(${d.slice(0,3)}) ${d.slice(3)}`;
@@ -206,7 +220,7 @@
   }
 
   function digitsOnly(raw) {
-    return String(raw || '').replace(/\D/g, '');
+    return normalizePhoneDigits(raw);
   }
 
   function formatAddress(a) {
