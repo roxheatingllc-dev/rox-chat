@@ -1,5 +1,5 @@
 /**
- * ROX Club Booking Widget v1.0
+ * ROX Club Booking Widget v1.0.3
  * =====================================================================
  *
  * Standalone booking wizard for Priority Comfort Club members invited
@@ -17,7 +17,7 @@
  *       companyPhone: "(720) 468-0689"
  *     };
  *   </script>
- *   <script src="https://rox-chat-production.up.railway.app/widget/club-booking-widget.js?v=1"></script>
+ *   <script src="https://rox-chat-production.up.railway.app/widget/club-booking-widget.js?v=2"></script>
  *
  * ─── FLOW ───────────────────────────────────────────────────────────
  *   1. PHONE        — single phone input
@@ -27,9 +27,17 @@
  *   5. CONFIRM      — summary + weather acknowledgement checkbox + Book
  *   6. SUCCESS      — confirmation + what's next
  *
- *   Side paths:
- *   - BLOCKED        — phone not in HCP, or customer not a PCC member
- *   - LATE_CALLBACK  — member wants a date past May 31 → form → email
+ *   Side paths (v1.0.3 — soft membership handling):
+ *   - OFFICE_VERIFYING  — phone IN HCP but no PCC tag. Greet by name,
+ *                         tell customer office will follow up. Office
+ *                         already emailed.
+ *   - NEEDS_INFO_FORM   — phone NOT in HCP. Show a contact form so
+ *                         the office can verify & call back ASAP.
+ *   - LATE_CALLBACK     — PCC member wants a date past the cutoff.
+ *
+ *   NO MORE "you're not a member" messaging — the tag might just be
+ *   missing in HCP. Every customer is treated as a potential member
+ *   until the office confirms otherwise.
  *
  * Cache busting: bump the ?v=N on the embed code after every change.
  * =====================================================================
@@ -76,27 +84,30 @@
     warnBg:         '#fffbeb',
     warnBorder:     '#fcd34d',
     warnText:       '#92400e',
-    blockedBg:      '#fef2f2',
-    blockedBorder:  '#fca5a5',
-    blockedText:    '#7f1d1d',
   };
 
   // ──────────────────────────────────────────────────────────────────
   // STEPS
   // ──────────────────────────────────────────────────────────────────
   const STEP = {
-    PHONE:          'phone',
-    LOOKING_UP:     'looking_up',
-    BLOCKED:        'blocked',
-    PICK_ADDRESS:   'pick_address',
-    CONFIRM_INFO:   'confirm_info',
-    CALENDAR:       'calendar',
-    CONFIRM:        'confirm',
-    BOOKING:        'booking',
-    SUCCESS:        'success',
-    LATE_CALLBACK:  'late_callback',
-    LATE_SENDING:   'late_sending',
-    LATE_SUCCESS:   'late_success',
+    PHONE:              'phone',
+    LOOKING_UP:         'looking_up',
+
+    // v1.0.3 — soft membership handling (replaces the old BLOCKED step)
+    OFFICE_VERIFYING:   'office_verifying',    // phone IN HCP, no PCC tag
+    NEEDS_INFO_FORM:    'needs_info_form',     // phone NOT in HCP
+    NEEDS_INFO_SENDING: 'needs_info_sending',
+    NEEDS_INFO_SUCCESS: 'needs_info_success',
+
+    PICK_ADDRESS:       'pick_address',
+    CONFIRM_INFO:       'confirm_info',
+    CALENDAR:           'calendar',
+    CONFIRM:            'confirm',
+    BOOKING:            'booking',
+    SUCCESS:            'success',
+    LATE_CALLBACK:      'late_callback',
+    LATE_SENDING:       'late_sending',
+    LATE_SUCCESS:       'late_success',
   };
 
   // ──────────────────────────────────────────────────────────────────
@@ -115,7 +126,7 @@
     addresses:     [],          // [] when only one — server already set selectedAddress
     selectedAddress: null,      // { street, city, state, zip }
     blockMessage:  null,        // populated when blocked=true
-    blockReason:   null,        // 'not_found' | 'not_member'
+    blockReason:   null,        // 'needs_info' | 'office_verification' | null
 
     // From /availability
     availability:  null,        // { availableDays: [...], cutoffDate, totalSlots }
@@ -133,6 +144,15 @@
     error:         null,
     phoneInput:    '',          // raw text typed into the phone field
     lateMessage:   '',
+
+    // Contact form (shown when phone not found in HCP)
+    formFields: {
+      firstName: '',
+      lastName:  '',
+      email:     '',
+      bestTime:  '',
+      message:   '',
+    },
   };
 
   let root = null;   // the DOM element we render into
@@ -248,6 +268,15 @@
         box-shadow: 0 0 0 3px ${COLORS.primaryLight};
       }
       .rcb-textarea { min-height: 80px; resize: vertical; font-family: inherit; }
+      select.rcb-input { appearance: auto; cursor: pointer; }
+
+      /* v1.0.3 — side-by-side name fields, reflows to single column on narrow */
+      .rcb-field-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 12px;
+      }
+      .rcb-field-row .rcb-field { margin-bottom: 16px; }
 
       .rcb-btn {
         display: inline-block;
@@ -307,13 +336,16 @@
         border-radius: 8px;
         margin-bottom: 16px;
       }
-      .rcb-blocked {
-        background: ${COLORS.blockedBg};
-        border: 1px solid ${COLORS.blockedBorder};
-        color: ${COLORS.blockedText};
+
+      /* v1.0.3 — neutral "info" box for office_verifying state (not an error) */
+      .rcb-info-box {
+        background: ${COLORS.primaryLight};
+        border: 1px solid ${COLORS.primaryBorder};
+        color: ${COLORS.text};
         padding: 20px;
         border-radius: 8px;
         margin-bottom: 16px;
+        line-height: 1.55;
       }
 
       .rcb-loading {
@@ -443,19 +475,22 @@
 
     let body = '';
     switch (state.step) {
-      case STEP.PHONE:         body = renderPhone(); break;
-      case STEP.LOOKING_UP:    body = renderLookingUp(); break;
-      case STEP.BLOCKED:       body = renderBlocked(); break;
-      case STEP.PICK_ADDRESS:  body = renderPickAddress(); break;
-      case STEP.CONFIRM_INFO:  body = renderConfirmInfo(); break;
-      case STEP.CALENDAR:      body = renderCalendar(); break;
-      case STEP.CONFIRM:       body = renderConfirm(); break;
-      case STEP.BOOKING:       body = renderBooking(); break;
-      case STEP.SUCCESS:       body = renderSuccess(); break;
-      case STEP.LATE_CALLBACK: body = renderLateCallback(); break;
-      case STEP.LATE_SENDING:  body = renderLateSending(); break;
-      case STEP.LATE_SUCCESS:  body = renderLateSuccess(); break;
-      default:                 body = renderPhone();
+      case STEP.PHONE:              body = renderPhone(); break;
+      case STEP.LOOKING_UP:         body = renderLookingUp(); break;
+      case STEP.OFFICE_VERIFYING:   body = renderOfficeVerifying(); break;
+      case STEP.NEEDS_INFO_FORM:    body = renderNeedsInfoForm(); break;
+      case STEP.NEEDS_INFO_SENDING: body = renderNeedsInfoSending(); break;
+      case STEP.NEEDS_INFO_SUCCESS: body = renderNeedsInfoSuccess(); break;
+      case STEP.PICK_ADDRESS:       body = renderPickAddress(); break;
+      case STEP.CONFIRM_INFO:       body = renderConfirmInfo(); break;
+      case STEP.CALENDAR:           body = renderCalendar(); break;
+      case STEP.CONFIRM:            body = renderConfirm(); break;
+      case STEP.BOOKING:            body = renderBooking(); break;
+      case STEP.SUCCESS:            body = renderSuccess(); break;
+      case STEP.LATE_CALLBACK:      body = renderLateCallback(); break;
+      case STEP.LATE_SENDING:       body = renderLateSending(); break;
+      case STEP.LATE_SUCCESS:       body = renderLateSuccess(); break;
+      default:                      body = renderPhone();
     }
 
     root.innerHTML = `<div class="rcb"><div class="rcb-card">${body}</div></div>`;
@@ -505,37 +540,123 @@
     `;
   }
 
-  // ─── STEP: blocked ───────────────────────────────────────────────
-  // Two flavors:
-  //   - 'not_found': passive — office will reach out, no CTA needed
-  //   - 'not_member': active — give them a "Call us" button
-  // Either way, the office has been emailed already.
-  function renderBlocked() {
-    const phone = CONFIG.companyPhone;
-    const isPassive = state.blockReason === 'not_found';
+  // ─── STEP: office_verifying (phone IN HCP, no PCC tag) ───────────
+  // Soft passive message. Customer's name is shown if we got it back.
+  // Office was already emailed; customer doesn't need to do anything.
+  function renderOfficeVerifying() {
+    const firstName = state.customer?.firstName || '';
+    const heading = firstName
+      ? `Hi ${escapeHtml(firstName)}!`
+      : `Thanks for reaching out!`;
+    const msg = state.blockMessage
+      || `We're having trouble locating your membership plan in our system. Our office team will reach out to you shortly to confirm your membership and get your tune-up scheduled.`;
 
-    if (isPassive) {
-      return `
-        <h1 class="rcb-h1">We've got it from here</h1>
-        <div class="rcb-blocked">
-          ${escapeHtml(state.blockMessage || `We couldn't find your information in our system. We've notified our office team and someone will reach out to you shortly.`)}
-        </div>
-        <p class="rcb-muted">
-          You don't need to do anything — sit tight and our team will be in touch.
-          If you'd rather call us right now, we're at ${escapeHtml(phone)}.
-        </p>
-      `;
-    }
-
-    // 'not_member' — give them a tap-to-call CTA
     return `
-      <h1 class="rcb-h1">Let's get you taken care of</h1>
-      <div class="rcb-blocked">
-        ${escapeHtml(state.blockMessage || `Please give us a call at ${phone} and our team will help.`)}
+      <h1 class="rcb-h1">${heading}</h1>
+      <div class="rcb-info-box">${escapeHtml(msg)}</div>
+      <p class="rcb-muted">
+        You don't need to do anything — our team will be in touch soon.
+        Questions in the meantime? Call us at ${escapeHtml(CONFIG.companyPhone)}.
+      </p>
+    `;
+  }
+
+  // ─── STEP: needs_info_form (phone NOT in HCP) ─────────────────────
+  // Quick contact form so the office can verify + call back ASAP.
+  // Email fires on submit (/member-verification-form) OR via abandon
+  // path if they close without submitting.
+  function renderNeedsInfoForm() {
+    const f = state.formFields || {};
+    const msg = state.blockMessage
+      || `We're having trouble locating your membership in our system. Please share a few quick details and our office will reach out to you as soon as possible.`;
+
+    return `
+      <h1 class="rcb-h1">A few quick details</h1>
+      <p class="rcb-p">${escapeHtml(msg)}</p>
+      ${renderError()}
+
+      <div class="rcb-field-row">
+        <div class="rcb-field">
+          <label class="rcb-label" for="rcb-info-fname">First name *</label>
+          <input
+            class="rcb-input"
+            id="rcb-info-fname"
+            autocomplete="given-name"
+            value="${escapeHtml(f.firstName || '')}"
+          />
+        </div>
+        <div class="rcb-field">
+          <label class="rcb-label" for="rcb-info-lname">Last name *</label>
+          <input
+            class="rcb-input"
+            id="rcb-info-lname"
+            autocomplete="family-name"
+            value="${escapeHtml(f.lastName || '')}"
+          />
+        </div>
       </div>
-      <a class="rcb-btn rcb-btn-primary rcb-btn-block" href="tel:${phone.replace(/[^\d+]/g, '')}" style="text-decoration:none; text-align:center;">
-        Call ${escapeHtml(phone)}
-      </a>
+
+      <div class="rcb-field">
+        <label class="rcb-label" for="rcb-info-email">Email (optional)</label>
+        <input
+          class="rcb-input"
+          type="email"
+          id="rcb-info-email"
+          autocomplete="email"
+          placeholder="you@example.com"
+          value="${escapeHtml(f.email || '')}"
+        />
+      </div>
+
+      <div class="rcb-field">
+        <label class="rcb-label" for="rcb-info-besttime">Best time to reach you (optional)</label>
+        <select class="rcb-input" id="rcb-info-besttime">
+          <option value=""${!f.bestTime ? ' selected' : ''}>Any time</option>
+          <option value="Morning"${f.bestTime === 'Morning' ? ' selected' : ''}>Morning</option>
+          <option value="Afternoon"${f.bestTime === 'Afternoon' ? ' selected' : ''}>Afternoon</option>
+          <option value="Evening"${f.bestTime === 'Evening' ? ' selected' : ''}>Evening</option>
+        </select>
+      </div>
+
+      <div class="rcb-field">
+        <label class="rcb-label" for="rcb-info-message">Anything else we should know? (optional)</label>
+        <textarea
+          class="rcb-input rcb-textarea"
+          id="rcb-info-message"
+          maxlength="1000"
+          placeholder="e.g. I signed up for the Priority Comfort Club last fall"
+        >${escapeHtml(f.message || '')}</textarea>
+      </div>
+
+      <button class="rcb-btn rcb-btn-primary rcb-btn-block" data-action="submit-info-form">
+        Submit
+      </button>
+    `;
+  }
+
+  function renderNeedsInfoSending() {
+    return `
+      <div style="text-align:center; padding: 40px 0;">
+        <div class="rcb-loading"></div>
+        <p class="rcb-p" style="margin-top: 16px;">Sending your info…</p>
+      </div>
+    `;
+  }
+
+  function renderNeedsInfoSuccess() {
+    const f = state.formFields || {};
+    const heading = f.firstName
+      ? `Thanks, ${escapeHtml(f.firstName)}!`
+      : `Got it!`;
+    return `
+      <h1 class="rcb-h1">${heading}</h1>
+      <div class="rcb-success">
+        Our office will reach out to you shortly to confirm your membership
+        and get your tune-up scheduled.
+      </div>
+      <p class="rcb-muted">
+        Questions in the meantime? Call us at ${escapeHtml(CONFIG.companyPhone)}.
+      </p>
     `;
   }
 
@@ -810,7 +931,6 @@
           handleAction('submit-phone');
         }
       });
-      // Auto-focus
       try { phoneEl.focus(); } catch (_) {}
     }
 
@@ -822,13 +942,30 @@
       });
     }
 
+    // v1.0.3 — contact form inputs (phone-not-in-HCP path)
+    // Stored to state without re-render so typing doesn't get interrupted.
+    const formFieldMap = [
+      ['rcb-info-fname',    'firstName'],
+      ['rcb-info-lname',    'lastName'],
+      ['rcb-info-email',    'email'],
+      ['rcb-info-besttime', 'bestTime'],
+      ['rcb-info-message',  'message'],
+    ];
+    formFieldMap.forEach(([id, key]) => {
+      const el = root.querySelector('#' + id);
+      if (el) {
+        const handler = (e) => { state.formFields[key] = e.target.value; };
+        el.addEventListener('input',  handler);
+        el.addEventListener('change', handler);
+      }
+    });
+
     // Weather acknowledgement checkbox (manual handling so render doesn't
     // re-run on every keystroke)
     const weatherEl = root.querySelector('#rcb-weather-ack');
     if (weatherEl) {
       weatherEl.addEventListener('change', () => {
         state.weatherAcked = !!weatherEl.checked;
-        // Toggle the disabled state of the confirm button without full re-render
         const btn = root.querySelector('[data-action="confirm-booking"]');
         if (btn) btn.disabled = !state.weatherAcked;
       });
@@ -842,7 +979,6 @@
         const date   = el.getAttribute('data-date');
         const index  = el.getAttribute('data-index');
 
-        // Prevent label-default submit for radios/checkboxes wrapped in labels
         if (action === 'pick-address' || action === 'toggle-weather') {
           // Let the label fire its own input behavior; we still want to react
         } else {
@@ -859,6 +995,7 @@
     switch (action) {
       case 'submit-phone':           return submitPhone();
       case 'reset':                  return resetToPhone();
+      case 'submit-info-form':       return submitInfoForm();
       case 'pick-address':           return pickAddress(ctx.index);
       case 'goto-calendar':          return gotoCalendar();
       case 'pick-date':              return pickDate(ctx.date);
@@ -894,7 +1031,6 @@
       });
 
       if (res.notReady) {
-        // Server validation said the phone wasn't ready (e.g. < 10 digits)
         state.step = STEP.PHONE;
         state.error = res.message || 'Please enter a valid phone number.';
         render();
@@ -902,14 +1038,24 @@
       }
 
       if (res.blocked) {
-        state.step         = STEP.BLOCKED;
+        // v1.0.3 — branch on blockReason:
+        //   'needs_info'          → show contact form (phone NOT in HCP)
+        //   'office_verification' → passive by-name message (phone IN HCP, no PCC tag)
         state.blockMessage = res.message;
         state.blockReason  = res.blockReason;
+
+        if (res.blockReason === 'needs_info') {
+          state.step = STEP.NEEDS_INFO_FORM;
+        } else {
+          // office_verification — save customer (contains firstName)
+          state.customer = res.customer || null;
+          state.step     = STEP.OFFICE_VERIFYING;
+        }
         render();
         return;
       }
 
-      // PCC member confirmed!
+      // PCC member confirmed
       state.customer    = res.customer;
       state.pccPlanName = res.pccPlanName;
       state.addresses   = Array.isArray(res.addresses) ? res.addresses : [];
@@ -943,8 +1089,48 @@
     state.error           = null;
     state.blockMessage    = null;
     state.blockReason     = null;
+    state.formFields      = { firstName: '', lastName: '', email: '', bestTime: '', message: '' };
     state.step            = STEP.PHONE;
     render();
+  }
+
+  // v1.0.3 — submit contact form when phone not found in HCP
+  async function submitInfoForm() {
+    const f = state.formFields || {};
+    const firstName = (f.firstName || '').trim();
+    const lastName  = (f.lastName  || '').trim();
+
+    if (!firstName || !lastName) {
+      state.error = 'Please enter your first and last name.';
+      render();
+      return;
+    }
+
+    state.step = STEP.NEEDS_INFO_SENDING;
+    render();
+
+    try {
+      const res = await api('POST', '/member-verification-form', {
+        sessionId: state.sessionId,
+        firstName,
+        lastName,
+        email:    (f.email    || '').trim(),
+        bestTime: (f.bestTime || '').trim(),
+        message:  (f.message  || '').trim(),
+      });
+      if (res.success) {
+        state.step = STEP.NEEDS_INFO_SUCCESS;
+      } else {
+        state.step  = STEP.NEEDS_INFO_FORM;
+        state.error = res.message || `Could not send. Please call ${CONFIG.companyPhone}.`;
+      }
+      render();
+    } catch (err) {
+      console.error('[ClubBooking] info-form failed:', err);
+      state.step  = STEP.NEEDS_INFO_FORM;
+      state.error = `Something went wrong. Please call ${CONFIG.companyPhone}.`;
+      render();
+    }
   }
 
   async function pickAddress(indexStr) {
@@ -1081,12 +1267,32 @@
   // ──────────────────────────────────────────────────────────────────
   // ABANDON DETECTION
   // ──────────────────────────────────────────────────────────────────
+  // Skip abandon when:
+  //   - a terminal SUCCESS step is showing (booking done, form sent, etc.)
+  //   - an email has already fired for this session (OFFICE_VERIFYING —
+  //     the server already emailed on lookup)
+  //   - a request is currently in flight (SENDING / BOOKING states) —
+  //     the server will set officeNotified when it finishes so we avoid
+  //     a race where both abandon + form-submit both fire emails.
+  //
+  // Crucial: NEEDS_INFO_FORM is NOT in the skip list. If the customer
+  // closes the tab while on the form, the abandon email WILL fire on
+  // the server (since officeNotified stays false for that state).
+  // That's our safety net — no leads get lost.
+  function shouldSkipAbandon() {
+    return state.step === STEP.SUCCESS
+        || state.step === STEP.LATE_SUCCESS
+        || state.step === STEP.NEEDS_INFO_SUCCESS
+        || state.step === STEP.OFFICE_VERIFYING
+        || state.step === STEP.BOOKING
+        || state.step === STEP.LATE_SENDING
+        || state.step === STEP.NEEDS_INFO_SENDING;
+  }
+
   function setupAbandonHandlers() {
-    // beforeunload: customer closes tab / navigates away
     window.addEventListener('beforeunload', () => {
       if (!state.sessionId) return;
-      if (state.step === STEP.SUCCESS || state.step === STEP.LATE_SUCCESS) return;
-      if (state.step === STEP.BLOCKED) return;
+      if (shouldSkipAbandon()) return;
       try {
         const payload = JSON.stringify({ sessionId: state.sessionId, reason: 'unload' });
         navigator.sendBeacon(
@@ -1099,10 +1305,7 @@
     // visibilitychange: mobile tab switched away for a long time
     let hiddenTimer = null;
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden && state.sessionId
-          && state.step !== STEP.SUCCESS
-          && state.step !== STEP.LATE_SUCCESS
-          && state.step !== STEP.BLOCKED) {
+      if (document.hidden && state.sessionId && !shouldSkipAbandon()) {
         hiddenTimer = setTimeout(() => {
           try {
             const payload = JSON.stringify({ sessionId: state.sessionId, reason: 'close' });
