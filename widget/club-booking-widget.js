@@ -1,11 +1,16 @@
 /**
- * ROX Club Booking Widget v1.0.7
- *   - v1.0.7 (2026-04-21): Calendar pagination — shows 8 days at a time
- *     with prev/next arrows. Prior versions rendered all ~60 days in one
- *     scrolling grid which pushed the time-slot list below the fold on
- *     mobile and made customers miss the times entirely. On returning
- *     from Confirm, the calendar auto-jumps to the page containing the
- *     selected date so the user keeps context.
+ * ROX Club Booking Widget v1.0.8
+ *   - v1.0.8 (2026-04-21): Calendar loading placeholder. First-load of
+ *     /availability takes 4-5 seconds because the server pulls 60 days
+ *     of HCP jobs + estimates + events, and during that wait the calendar
+ *     area was empty — customers thought the page was broken and bailed.
+ *     Now shows a spinner + "Finding open spots for you…" with a subtext
+ *     setting expectation that it takes a few seconds. Subsequent calendar
+ *     renders (back from Confirm) are instant because availability is
+ *     cached in state, so the placeholder only shows on initial entry.
+ *   - v1.0.7: Calendar pagination — shows 8 days at a time with prev/next
+ *     arrows. Auto-jumps back to the page containing the selected date
+ *     when returning from Confirm.
  *   - v1.0.6: Climate-normal weather fallback + warm/cool color coding.
  *   - v1.0.5: Open-Meteo 16-day Denver forecast.
  *   - v1.0.4: Oldest-system-wins routing.
@@ -28,7 +33,7 @@
  *       companyPhone: "(720) 468-0689"
  *     };
  *   </script>
- *   <script src="https://rox-chat-production.up.railway.app/widget/club-booking-widget.js?v=7"></script>
+ *   <script src="https://rox-chat-production.up.railway.app/widget/club-booking-widget.js?v=8"></script>
  *   (bump ?v=N after every widget change so WordPress cache doesn't serve stale JS)
  *
  * ─── FLOW ───────────────────────────────────────────────────────────
@@ -645,6 +650,30 @@
         color: ${COLORS.textMuted};
         margin-top: 2px;
       }
+
+      /* v1.0.8 — calendar loading placeholder. Shown while the server
+       * fetches availability (4-5 seconds on first load). Matches the
+       * info-box color palette so it visually connects to the primary
+       * brand color rather than feeling like an error. */
+      .rcb-cal-loading {
+        text-align: center;
+        padding: 44px 20px 36px;
+        background: ${COLORS.primaryLight};
+        border: 1px dashed ${COLORS.primaryBorder};
+        border-radius: 8px;
+        margin-bottom: 16px;
+      }
+      .rcb-cal-loading-main {
+        margin-top: 14px;
+        font-size: 15px;
+        font-weight: 600;
+        color: ${COLORS.text};
+      }
+      .rcb-cal-loading-sub {
+        margin-top: 6px;
+        font-size: 13px;
+        color: ${COLORS.textMuted};
+      }
     `;
     document.head.appendChild(style);
   }
@@ -900,6 +929,30 @@
     const weatherBanner = cmp.weatherCaveat
       ? `<div class="rcb-warn"><strong>☀️ Weather note: </strong>${escapeHtml(cmp.weatherCaveat)}</div>`
       : '';
+
+    // v1.0.8 — loading placeholder. Rendered while /availability is in
+    // flight (state.loading === true, set by gotoCalendar before the
+    // fetch starts). Keeps the heading + weather banner + muted "through
+    // cutoff" line in place so when real data arrives the layout doesn't
+    // jump — only the loading box swaps out for the real day grid.
+    //
+    // role="status" + aria-live="polite" makes screen readers announce
+    // the loading state without interrupting the user.
+    if (state.loading) {
+      return `
+        <h1 class="rcb-h1">Pick a time</h1>
+        ${weatherBanner}
+        ${renderError()}
+        <p class="rcb-muted" style="margin-bottom: 12px;">
+          Available dates through ${escapeHtml(cmp.cutoffDate || 'the cutoff date')}:
+        </p>
+        <div class="rcb-cal-loading" role="status" aria-live="polite">
+          <div class="rcb-loading"></div>
+          <div class="rcb-cal-loading-main">Finding open spots for you…</div>
+          <div class="rcb-cal-loading-sub">This usually takes a few seconds.</div>
+        </div>
+      `;
+    }
 
     if (allDays.length === 0 && !state.loading) {
       return `
