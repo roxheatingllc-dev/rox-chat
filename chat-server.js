@@ -21,6 +21,7 @@ const chatConfig = require('./config/chat-config');
 const chatRoutes = require('./routes/chat-routes');
 const themeRoutes = require('./routes/theme-routes');
 const bookingRoutes = require('./routes/booking-routes');
+const clubBookingRoutes = require('./routes/club-booking-routes');
 const quoteLeadRoute = require('./routes/quote-lead');
 const configRoutes = require('./routes/config-routes');
 
@@ -70,6 +71,7 @@ app.use('/api/widget-config', configRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/themes', themeRoutes);
 app.use('/api/booking', bookingRoutes);
+app.use('/api/club-booking', clubBookingRoutes);
 app.use('/api/quote-lead', quoteLeadRoute);
 
 // ========================================
