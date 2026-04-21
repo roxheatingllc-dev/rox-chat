@@ -1,5 +1,16 @@
 /**
- * ROX Club Booking Widget v1.0.6
+ * ROX Club Booking Widget v1.0.7
+ *   - v1.0.7 (2026-04-21): Calendar pagination — shows 8 days at a time
+ *     with prev/next arrows. Prior versions rendered all ~60 days in one
+ *     scrolling grid which pushed the time-slot list below the fold on
+ *     mobile and made customers miss the times entirely. On returning
+ *     from Confirm, the calendar auto-jumps to the page containing the
+ *     selected date so the user keeps context.
+ *   - v1.0.6: Climate-normal weather fallback + warm/cool color coding.
+ *   - v1.0.5: Open-Meteo 16-day Denver forecast.
+ *   - v1.0.4: Oldest-system-wins routing.
+ *   - v1.0.3: Soft membership verification paths.
+ *   - v1.0.0 – 1.0.2: initial build.
  * =====================================================================
  *
  * Standalone booking wizard for Priority Comfort Club members invited
@@ -17,7 +28,8 @@
  *       companyPhone: "(720) 468-0689"
  *     };
  *   </script>
- *   <script src="https://rox-chat-production.up.railway.app/widget/club-booking-widget.js?v=2"></script>
+ *   <script src="https://rox-chat-production.up.railway.app/widget/club-booking-widget.js?v=7"></script>
+ *   (bump ?v=N after every widget change so WordPress cache doesn't serve stale JS)
  *
  * ─── FLOW ───────────────────────────────────────────────────────────
  *   1. PHONE        — single phone input
@@ -109,6 +121,19 @@
   // cooler days as "heating-still-relevant weather."
   const TEMP_WARM_THRESHOLD_F = 70;
 
+  // ─────────────────────────────────────────────────────────────────
+  // CALENDAR PAGINATION (v1.0.7)
+  // ─────────────────────────────────────────────────────────────────
+  // How many days to show at once in the calendar grid. The campaign
+  // window is ~60 days (Apr 21 – May 31 in 2026), so without pagination
+  // the grid scrolls past the fold on mobile and hides the time slots
+  // below it. Eight days keeps everything above the fold and comfortably
+  // fits one week plus a bonus day.
+  //
+  // When we go multi-tenant, this can stay global — it's a pure UX
+  // constant, not a business rule.
+  const DAYS_PER_PAGE = 8;
+
   // ──────────────────────────────────────────────────────────────────
   // STEPS
   // ──────────────────────────────────────────────────────────────────
@@ -182,6 +207,13 @@
     // half of the campaign window typically has temps — that's fine,
     // days without a match just omit the temp display.
     weather: null,
+
+    // v1.0.7 — Which page of the calendar is currently showing.
+    // 0-indexed. Each page shows DAYS_PER_PAGE days. Reset to 0 on
+    // fresh calendar entry (gotoCalendar) or full reset (resetToPhone).
+    // On backToCalendar, auto-jumps to the page containing selectedDate
+    // so the user doesn't lose context after editing their booking.
+    calendarPageIdx: 0,
   };
 
   let root = null;   // the DOM element we render into
@@ -562,6 +594,57 @@
         font-size: 14px;
         color: ${COLORS.textSecondary};
       }
+
+      /* v1.0.7 — calendar pagination nav (prev/next arrows + date range).
+       * Hidden automatically when there's only one page of days. */
+      .rcb-cal-nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .rcb-cal-arrow {
+        background: #fff;
+        border: 1px solid ${COLORS.inputBorder};
+        border-radius: 8px;
+        padding: 8px 16px;
+        font-size: 18px;
+        font-weight: 600;
+        cursor: pointer;
+        color: ${COLORS.text};
+        transition: border-color 0.15s, background 0.15s, color 0.15s;
+        font-family: inherit;
+        min-width: 48px;
+        flex-shrink: 0;
+      }
+      .rcb-cal-arrow:hover:not(:disabled) {
+        border-color: ${COLORS.primary};
+        background: ${COLORS.primaryLight};
+        color: ${COLORS.primary};
+      }
+      .rcb-cal-arrow:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+      }
+      .rcb-cal-range {
+        text-align: center;
+        flex: 1;
+        min-width: 0;
+      }
+      .rcb-cal-range-dates {
+        font-weight: 600;
+        font-size: 15px;
+        color: ${COLORS.text};
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .rcb-cal-range-page {
+        font-size: 11px;
+        color: ${COLORS.textMuted};
+        margin-top: 2px;
+      }
     `;
     document.head.appendChild(style);
   }
@@ -802,13 +885,23 @@
   // ─── STEP: calendar with weather banner + late callback ──────────
   function renderCalendar() {
     const cmp = state.campaign || {};
-    const days = state.availability?.availableDays || [];
+    const allDays = state.availability?.availableDays || [];
+
+    // v1.0.7 — pagination slice. Clamp page index in case the list
+    // shrunk (e.g. availability re-fetch returned fewer days) so we
+    // never display an empty page while real days exist.
+    const totalPages = Math.max(1, Math.ceil(allDays.length / DAYS_PER_PAGE));
+    const pageIdx    = Math.min(Math.max(0, state.calendarPageIdx), totalPages - 1);
+    const startIdx   = pageIdx * DAYS_PER_PAGE;
+    const endIdx     = Math.min(startIdx + DAYS_PER_PAGE, allDays.length);
+    const days       = allDays.slice(startIdx, endIdx);
+    const showNav    = allDays.length > DAYS_PER_PAGE;
 
     const weatherBanner = cmp.weatherCaveat
       ? `<div class="rcb-warn"><strong>☀️ Weather note: </strong>${escapeHtml(cmp.weatherCaveat)}</div>`
       : '';
 
-    if (days.length === 0 && !state.loading) {
+    if (allDays.length === 0 && !state.loading) {
       return `
         <h1 class="rcb-h1">Pick a time</h1>
         ${weatherBanner}
@@ -873,6 +966,35 @@
       }
     }
 
+    // v1.0.7 — calendar-nav row. Only rendered when we have more than
+    // one page of days. `showNav` was set up above alongside the slice.
+    //
+    // Range label shows the date range of the currently-visible page,
+    // e.g. "Apr 21 – Apr 28". We derive the short label by stripping
+    // the leading "Mon, " / "Tue, " from each day's displayDate — same
+    // transformation used inside the day card below.
+    let calNav = '';
+    if (showNav && days.length > 0) {
+      const stripDow   = (s) => String(s || '').replace(/^\w+,\s*/, '');
+      const firstLabel = stripDow(days[0].displayDate);
+      const lastLabel  = stripDow(days[days.length - 1].displayDate);
+      const rangeText  = firstLabel === lastLabel
+        ? firstLabel
+        : `${firstLabel} – ${lastLabel}`;
+      const prevDisabled = pageIdx <= 0                ? 'disabled' : '';
+      const nextDisabled = pageIdx >= totalPages - 1   ? 'disabled' : '';
+      calNav = `
+        <div class="rcb-cal-nav">
+          <button class="rcb-cal-arrow" data-action="cal-prev" ${prevDisabled} aria-label="Earlier dates">←</button>
+          <div class="rcb-cal-range">
+            <div class="rcb-cal-range-dates">${escapeHtml(rangeText)}</div>
+            <div class="rcb-cal-range-page">Page ${pageIdx + 1} of ${totalPages}</div>
+          </div>
+          <button class="rcb-cal-arrow" data-action="cal-next" ${nextDisabled} aria-label="Later dates">→</button>
+        </div>
+      `;
+    }
+
     return `
       <h1 class="rcb-h1">Pick a time</h1>
       ${weatherBanner}
@@ -880,6 +1002,7 @@
       <p class="rcb-muted" style="margin-bottom: 12px;">
         Available dates through ${escapeHtml(cmp.cutoffDate || 'the cutoff date')}:
       </p>
+      ${calNav}
       <div class="rcb-day-list">${dayButtons}</div>
       ${slotSection}
       ${renderLateCallbackPrompt()}
@@ -1114,6 +1237,8 @@
       case 'goto-calendar':          return gotoCalendar();
       case 'pick-date':              return pickDate(ctx.date);
       case 'pick-slot':              return pickSlot(ctx.idx);
+      case 'cal-prev':               return calPrev();
+      case 'cal-next':               return calNext();
       case 'goto-confirm':           return gotoConfirm();
       case 'back-to-calendar':       return backToCalendar();
       case 'toggle-weather':         return; // checkbox handler does the work
@@ -1204,6 +1329,7 @@
     state.blockMessage    = null;
     state.blockReason     = null;
     state.formFields      = { firstName: '', lastName: '', email: '', bestTime: '', message: '' };
+    state.calendarPageIdx = 0;
     state.step            = STEP.PHONE;
     render();
   }
@@ -1270,6 +1396,10 @@
     state.step = STEP.CALENDAR;
     state.loading = true;
     state.availability = null;
+    // v1.0.7 — fresh calendar entry always starts at page 0. (The
+    // backToCalendar path — from Confirm — computes the right page
+    // based on selectedDate instead, so the user keeps their context.)
+    state.calendarPageIdx = 0;
     render();
 
     // Fetch weather in parallel — non-blocking. If availability arrives
@@ -1340,6 +1470,19 @@
     render();
   }
 
+  // v1.0.7 — calendar pagination controls. Both clamp defensively so an
+  // out-of-range state never produces an empty-looking calendar.
+  function calPrev() {
+    state.calendarPageIdx = Math.max(0, state.calendarPageIdx - 1);
+    render();
+  }
+  function calNext() {
+    const total = (state.availability?.availableDays || []).length;
+    const maxPage = Math.max(0, Math.ceil(total / DAYS_PER_PAGE) - 1);
+    state.calendarPageIdx = Math.min(maxPage, state.calendarPageIdx + 1);
+    render();
+  }
+
   function gotoConfirm() {
     if (!state.selectedSlot) return;
     state.weatherAcked = false; // force re-acknowledgement
@@ -1348,6 +1491,17 @@
   }
 
   function backToCalendar() {
+    // v1.0.7 — If the user already picked a date, jump to the page
+    // containing that date so they come back to exactly what they saw.
+    // Without this, clicking "Back" from Confirm would silently scroll
+    // them to page 0 and they'd have to find their date again.
+    if (state.selectedDate && state.availability) {
+      const idx = (state.availability.availableDays || [])
+        .findIndex(d => d.date === state.selectedDate);
+      if (idx >= 0) {
+        state.calendarPageIdx = Math.floor(idx / DAYS_PER_PAGE);
+      }
+    }
     state.step = STEP.CALENDAR;
     render();
   }
