@@ -1,5 +1,5 @@
 /**
- * ROX Club Booking Widget v1.0.4
+ * ROX Club Booking Widget v1.0.5
  * =====================================================================
  *
  * Standalone booking wizard for Priority Comfort Club members invited
@@ -153,6 +153,12 @@
       bestTime:  '',
       message:   '',
     },
+
+    // Map of YYYY-MM-DD → high temperature °F, populated by loadWeather().
+    // Open-Meteo caps the free forecast at 16 days, so only the first
+    // half of the campaign window typically has temps — that's fine,
+    // days without a match just omit the temp display.
+    weather: null,
   };
 
   let root = null;   // the DOM element we render into
@@ -407,6 +413,9 @@
       }
       .rcb-day-dow { font-size: 12px; opacity: 0.85; }
       .rcb-day-date { font-weight: 600; margin-top: 2px; }
+      /* Temperature badge shown under the date when weather data is available. */
+      .rcb-day-temp { font-size: 11px; opacity: 0.75; margin-top: 2px; font-weight: 500; }
+      .rcb-day-selected .rcb-day-temp { opacity: 1; }
 
       .rcb-slot-list {
         display: grid;
@@ -740,10 +749,17 @@
       const sel = state.selectedDate === d.date ? 'rcb-day-selected' : '';
       const dowShort = (d.dayOfWeek || '').slice(0, 3);
       const dateShort = (d.displayDate || '').replace(/^\w+,\s*/, ''); // strip leading "Mon, "
+      // Weather is best-effort — Open-Meteo forecast only covers ~16 days.
+      // Days past that window simply have no temp key in state.weather.
+      const temp = state.weather ? state.weather[d.date] : null;
+      const tempHtml = temp != null
+        ? `<div class="rcb-day-temp">${temp}°F</div>`
+        : '';
       return `
         <button class="rcb-day ${sel}" data-action="pick-date" data-date="${escapeHtml(d.date)}">
           <div class="rcb-day-dow">${escapeHtml(dowShort)}</div>
           <div class="rcb-day-date">${escapeHtml(dateShort)}</div>
+          ${tempHtml}
         </button>
       `;
     }).join('');
@@ -1172,6 +1188,12 @@
     state.availability = null;
     render();
 
+    // Fetch weather in parallel — non-blocking. If availability arrives
+    // first, the calendar renders without temps; when weather resolves,
+    // we re-render. If weather is already cached from a previous visit
+    // to the calendar step, loadWeather() bails out immediately.
+    if (!state.weather) loadWeather();
+
     try {
       const res = await apiGet('/availability', { sessionId: state.sessionId });
       state.availability = res;
@@ -1182,6 +1204,41 @@
       state.loading = false;
       state.error   = `Couldn't load availability. Please call ${CONFIG.companyPhone}.`;
       render();
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // loadWeather() — fetch 16-day Denver forecast from Open-Meteo
+  // ──────────────────────────────────────────────────────────────────
+  // Free API, no key. Returns high temps in °F for up to 16 days.
+  // Fire-and-forget: weather is purely cosmetic, never blocking.
+  //
+  // Denver lat/long hard-coded for ROX — when we go multi-tenant,
+  // these move into tenant config so each shop's weather is local.
+  async function loadWeather() {
+    const url = 'https://api.open-meteo.com/v1/forecast'
+      + '?latitude=39.74&longitude=-104.99'
+      + '&daily=temperature_2m_max'
+      + '&temperature_unit=fahrenheit'
+      + '&timezone=America/Denver'
+      + '&forecast_days=16';
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      const times = data?.daily?.time;
+      const temps = data?.daily?.temperature_2m_max;
+      if (!Array.isArray(times) || !Array.isArray(temps)) return;
+      const map = {};
+      for (let i = 0; i < times.length; i++) {
+        map[times[i]] = Math.round(temps[i]);
+      }
+      state.weather = map;
+      // If the calendar is already showing, re-render to populate temps.
+      if (state.step === STEP.CALENDAR && !state.loading) render();
+    } catch (e) {
+      // Weather is best-effort — never surface errors to the customer.
+      console.warn('[ClubBooking] Weather fetch failed:', e.message);
     }
   }
 
