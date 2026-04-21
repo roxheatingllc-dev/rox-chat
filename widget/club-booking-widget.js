@@ -1,5 +1,5 @@
 /**
- * ROX Club Booking Widget v1.0.5
+ * ROX Club Booking Widget v1.0.6
  * =====================================================================
  *
  * Standalone booking wizard for Priority Comfort Club members invited
@@ -85,6 +85,29 @@
     warnBorder:     '#fcd34d',
     warnText:       '#92400e',
   };
+
+  // ──────────────────────────────────────────────────────────────────
+  // CLIMATE NORMALS — Denver average daily HIGH temperature by month
+  // ──────────────────────────────────────────────────────────────────
+  // Open-Meteo only gives us 16 days of real forecast, but the campaign
+  // window runs ~60 days. For dates past the forecast horizon we fall
+  // back to Denver's historical monthly average high (NOAA 1991–2020
+  // normals, rounded to whole °F). The display clearly marks these as
+  // "typical" rather than "forecast" so customers aren't misled about
+  // forecast accuracy.
+  //
+  // When we go multi-tenant (DispatchHQ), this table moves into tenant
+  // config so each shop's climate data is local to them.
+  const DENVER_MONTHLY_HIGH_F = {
+    1: 45, 2: 48, 3: 56, 4: 62, 5: 72, 6: 83,
+    7: 89, 8: 87, 9: 79, 10: 66, 11: 53, 12: 45,
+  };
+
+  // Temperature color threshold — >= this is "warm" (red), below is "cool" (blue).
+  // Chosen to match the working HVAC split: 70°F is roughly the
+  // indoor-comfort baseline, so warmer days read as "AC weather" and
+  // cooler days as "heating-still-relevant weather."
+  const TEMP_WARM_THRESHOLD_F = 70;
 
   // ──────────────────────────────────────────────────────────────────
   // STEPS
@@ -233,6 +256,43 @@
     if (!a) return '';
     const parts = [a.street, a.city, a.state, a.zip].filter(Boolean);
     return parts.join(', ');
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // getTempForDate(dateStr) — resolve the temp to display for a date
+  // ──────────────────────────────────────────────────────────────────
+  // Returns an object describing what to render, or null if we have
+  // no temperature data at all (shouldn't happen — every month has
+  // a climate fallback).
+  //
+  //   { value: 68, isTypical: false }  ← real 16-day forecast
+  //   { value: 72, isTypical: true  }  ← climate normal fallback
+  //
+  // Preference order: forecast first (most accurate), climate second.
+  function getTempForDate(dateStr) {
+    if (!dateStr) return null;
+
+    // 1. Real forecast (Open-Meteo, 16-day horizon) — always preferred
+    if (state.weather && state.weather[dateStr] != null) {
+      return { value: state.weather[dateStr], isTypical: false };
+    }
+
+    // 2. Climate normal fallback — parse YYYY-MM-DD, look up the month.
+    // slice(5, 7) grabs "05" from "2026-05-14"; parseInt handles the
+    // leading zero.
+    const monthNum = parseInt(dateStr.slice(5, 7), 10);
+    const climate = DENVER_MONTHLY_HIGH_F[monthNum];
+    if (climate == null) return null;
+    return { value: climate, isTypical: true };
+  }
+
+  // Pick the CSS class for a temperature value based on the warm/cool
+  // threshold. Used for both forecast and typical temps so the color
+  // language is consistent.
+  function tempColorClass(tempF) {
+    return tempF >= TEMP_WARM_THRESHOLD_F
+      ? 'rcb-day-temp-hot'
+      : 'rcb-day-temp-cool';
   }
 
   // ──────────────────────────────────────────────────────────────────
@@ -413,9 +473,25 @@
       }
       .rcb-day-dow { font-size: 12px; opacity: 0.85; }
       .rcb-day-date { font-weight: 600; margin-top: 2px; }
-      /* Temperature badge shown under the date when weather data is available. */
-      .rcb-day-temp { font-size: 11px; opacity: 0.75; margin-top: 2px; font-weight: 500; }
-      .rcb-day-selected .rcb-day-temp { opacity: 1; }
+      /* Temperature badge shown under the date.
+       * - forecast temps (Open-Meteo, first ~16 days): plain weight
+       * - "typical" temps (climate normals, days past the forecast horizon):
+       *   italic + lighter so customers can tell them apart at a glance
+       * Colors flip at 70°F: warmer = red, cooler = blue.
+       */
+      .rcb-day-temp { font-size: 11px; margin-top: 2px; font-weight: 500; }
+      .rcb-day-temp-hot  { color: #DC2626; }  /* >= 70°F — warm */
+      .rcb-day-temp-cool { color: #2563EB; }  /* <  70°F — cool */
+      .rcb-day-temp-typical {
+        font-style: italic;
+        opacity: 0.70;
+        font-size: 10px;
+      }
+      /* Selected day uses an orange background, so red/blue text would
+       * clash. Force white for readability when the day card is picked. */
+      .rcb-day-selected .rcb-day-temp,
+      .rcb-day-selected .rcb-day-temp-hot,
+      .rcb-day-selected .rcb-day-temp-cool { color: #fff; opacity: 1; }
 
       .rcb-slot-list {
         display: grid;
@@ -749,12 +825,20 @@
       const sel = state.selectedDate === d.date ? 'rcb-day-selected' : '';
       const dowShort = (d.dayOfWeek || '').slice(0, 3);
       const dateShort = (d.displayDate || '').replace(/^\w+,\s*/, ''); // strip leading "Mon, "
-      // Weather is best-effort — Open-Meteo forecast only covers ~16 days.
-      // Days past that window simply have no temp key in state.weather.
-      const temp = state.weather ? state.weather[d.date] : null;
-      const tempHtml = temp != null
-        ? `<div class="rcb-day-temp">${temp}°F</div>`
-        : '';
+      // Resolve temp (forecast preferred, falls back to climate normal).
+      // If absolutely nothing is available we render no temp line at all.
+      const tempInfo = getTempForDate(d.date);
+      let tempHtml = '';
+      if (tempInfo) {
+        const colorCls = tempColorClass(tempInfo.value);
+        const typicalCls = tempInfo.isTypical ? ' rcb-day-temp-typical' : '';
+        // "~" prefix on typical temps signals approximation without needing
+        // a second line of text inside the small day card.
+        const label = tempInfo.isTypical
+          ? `~${tempInfo.value}°`
+          : `${tempInfo.value}°`;
+        tempHtml = `<div class="rcb-day-temp ${colorCls}${typicalCls}">${label}</div>`;
+      }
       return `
         <button class="rcb-day ${sel}" data-action="pick-date" data-date="${escapeHtml(d.date)}">
           <div class="rcb-day-dow">${escapeHtml(dowShort)}</div>
