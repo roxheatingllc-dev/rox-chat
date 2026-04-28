@@ -1,5 +1,15 @@
 /**
- * ROX Booking Widget v1.8 - Self-Service Scheduling Wizard
+ * ROX Booking Widget v1.9 - Self-Service Scheduling Wizard
+ *
+ * v1.9 Changes (2026-04-28):
+ *   - ADD: TCPA consent checkbox on Confirm + Message steps. Existing
+ *           customers and message-flow customers previously skipped the
+ *           QUICK_INFO step where consent was first introduced, so they
+ *           had no consent gate. Now blocked from submitting until the
+ *           box is checked. State is shared via state.data._tcpaConsent
+ *           so a customer who checked it on QUICK_INFO sees it pre-checked
+ *           on Confirm — single click for new customers, single click
+ *           for existing/message customers, no double-prompting either way.
  * 
  * Embed on any website:
  * <script>
@@ -774,7 +784,7 @@
       return `<div class="rxb-card"><div class="rxb-loading"><div class="rxb-spinner"></div><div class="rxb-loading-text">Sending your message...</div></div></div>`;
     }
     const errorHtml = state.error ? `<div class="rxb-error">${state.error}</div>` : '';
-    return `<div class="rxb-card"><div class="rxb-card-title">Your Message</div><div class="rxb-card-subtitle">What would you like to tell our office?</div>${errorHtml}<div class="rxb-field"><label class="rxb-label">Message</label><textarea class="rxb-textarea" id="rxb-message" placeholder="Type your message or request here..." style="min-height: 120px;">${state.data.message || ''}</textarea></div><div class="rxb-nav" style="border-top:none; margin-top:24px; padding-top:0;"><button class="rxb-back-btn" data-action="back">\u2190 Back</button><button class="rxb-next-btn" data-action="submit-message">Send Message \u2709</button></div></div>`;
+    return `<div class="rxb-card"><div class="rxb-card-title">Your Message</div><div class="rxb-card-subtitle">What would you like to tell our office?</div>${errorHtml}<div class="rxb-field"><label class="rxb-label">Message</label><textarea class="rxb-textarea" id="rxb-message" placeholder="Type your message or request here..." style="min-height: 120px;">${state.data.message || ''}</textarea></div><label class="rxb-consent"><input type="checkbox" id="rxb-tcpa" ${state.data._tcpaConsent ? 'checked' : ''}><span class="rxb-consent-text">By submitting this form you consent to receive SMS and email messages from ${CONFIG.companyName} at the number and email provided. Consent is not a condition of purchase. Msg &amp; data rates may apply.</span></label><div class="rxb-nav" style="border-top:none; margin-top:24px; padding-top:0;"><button class="rxb-back-btn" data-action="back">\u2190 Back</button><button class="rxb-next-btn" data-action="submit-message">Send Message \u2709</button></div></div>`;
   }
 
   function renderPccAsk() {
@@ -812,7 +822,7 @@
     if (d.address && d.address.street) { addressStr = `${d.address.street}, ${d.address.city}, ${d.address.state} ${d.address.zip}`; }
     else if (d.customer?.address) { const ca = d.customer.address; addressStr = `${ca.street}, ${ca.city}`; }
 
-    return `<div class="rxb-card"><div class="rxb-card-title">Review & Confirm</div><div class="rxb-card-subtitle">Make sure everything looks right</div>${errorHtml}<div class="rxb-summary"><div class="rxb-summary-row"><span class="rxb-summary-label">Service</span><span class="rxb-summary-value">${serviceLabels[d.serviceType] || d.serviceType}</span></div><div class="rxb-summary-row"><span class="rxb-summary-label">Date & Time</span><span class="rxb-summary-value">${dateDisplay} at ${timeDisplay}</span></div><div class="rxb-summary-row"><span class="rxb-summary-label">System Age</span><span class="rxb-summary-value">${ageLabels[d.systemAge] || d.systemAge}</span></div>${d.issue ? `<div class="rxb-summary-row"><span class="rxb-summary-label">Issue</span><span class="rxb-summary-value" style="max-width:60%">${escapeHtml(d.issue)}</span></div>` : ''}<div class="rxb-summary-row"><span class="rxb-summary-label">Name</span><span class="rxb-summary-value">${escapeHtml(d.name)}</span></div>${d.phone ? `<div class="rxb-summary-row"><span class="rxb-summary-label">Phone</span><span class="rxb-summary-value">${formatPhone(d.phone)}</span></div>` : ''}${addressStr ? `<div class="rxb-summary-row"><span class="rxb-summary-label">Address</span><span class="rxb-summary-value" style="max-width:60%">${escapeHtml(addressStr)}</span></div>` : ''}</div><div class="rxb-nav" style="border-top:none; margin-top:24px; padding-top:0;"><button class="rxb-back-btn" data-action="back">\u2190 Back</button><button class="rxb-next-btn" data-action="confirm-booking">Confirm Booking \u2714</button></div></div>`;
+    return `<div class="rxb-card"><div class="rxb-card-title">Review & Confirm</div><div class="rxb-card-subtitle">Make sure everything looks right</div>${errorHtml}<div class="rxb-summary"><div class="rxb-summary-row"><span class="rxb-summary-label">Service</span><span class="rxb-summary-value">${serviceLabels[d.serviceType] || d.serviceType}</span></div><div class="rxb-summary-row"><span class="rxb-summary-label">Date & Time</span><span class="rxb-summary-value">${dateDisplay} at ${timeDisplay}</span></div><div class="rxb-summary-row"><span class="rxb-summary-label">System Age</span><span class="rxb-summary-value">${ageLabels[d.systemAge] || d.systemAge}</span></div>${d.issue ? `<div class="rxb-summary-row"><span class="rxb-summary-label">Issue</span><span class="rxb-summary-value" style="max-width:60%">${escapeHtml(d.issue)}</span></div>` : ''}<div class="rxb-summary-row"><span class="rxb-summary-label">Name</span><span class="rxb-summary-value">${escapeHtml(d.name)}</span></div>${d.phone ? `<div class="rxb-summary-row"><span class="rxb-summary-label">Phone</span><span class="rxb-summary-value">${formatPhone(d.phone)}</span></div>` : ''}${addressStr ? `<div class="rxb-summary-row"><span class="rxb-summary-label">Address</span><span class="rxb-summary-value" style="max-width:60%">${escapeHtml(addressStr)}</span></div>` : ''}</div><label class="rxb-consent"><input type="checkbox" id="rxb-tcpa" ${state.data._tcpaConsent ? 'checked' : ''}><span class="rxb-consent-text">By submitting this form you consent to receive SMS and email messages from ${CONFIG.companyName} at the number and email provided. Consent is not a condition of purchase. Msg &amp; data rates may apply.</span></label><div class="rxb-nav" style="border-top:none; margin-top:24px; padding-top:0;"><button class="rxb-back-btn" data-action="back">\u2190 Back</button><button class="rxb-next-btn" data-action="confirm-booking">Confirm Booking \u2714</button></div></div>`;
   }
 
   function renderSuccess() {
@@ -1270,7 +1280,13 @@
   }
 
   async function confirmBooking() {
-    saveFormData(); state.loading = true; state.error = null; render();
+    saveFormData();
+    // v1.9 — TCPA consent gate. Must be checked before booking can
+    // be submitted. New customers may have already checked this on
+    // QUICK_INFO (state persists across steps); existing customers
+    // and re-bookings see it for the first time on the Confirm step.
+    if (!state.data._tcpaConsent) { state.error = 'Please check the consent box to continue.'; render(); return; }
+    state.loading = true; state.error = null; render();
     try {
       await updateSession({ serviceType: state.data.serviceType, customerType: state.data.customerType, systemAge: state.data.systemAge, selectedDate: state.data.selectedDate, selectedSlot: state.data.selectedSlot, issue: state.data.issue, name: state.data.name, phone: state.data.phone, email: state.data.email, address: state.data.address, isPccMember: state.data.isPccMember || false, pccType: state.data.pccType || null });
       const result = await api('POST', '/confirm', { sessionId: state.sessionId });
@@ -1283,6 +1299,10 @@
   async function submitMessage() {
     saveFormData();
     if (!state.data.message || state.data.message.length < 3) { state.error = 'Please enter your message.'; render(); return; }
+    // v1.9 — TCPA consent gate. Same field as the Confirm flow; new
+    // customers see it here on the Message step (they bypass QUICK_INFO
+    // when sending a message instead of booking).
+    if (!state.data._tcpaConsent) { state.error = 'Please check the consent box to continue.'; render(); return; }
     state.loading = true; state.error = null; render();
     try {
       const result = await api('POST', '/message', {

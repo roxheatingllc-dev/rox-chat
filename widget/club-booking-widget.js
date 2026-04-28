@@ -1,5 +1,13 @@
 /**
- * ROX Club Booking Widget v1.0.8
+ * ROX Club Booking Widget v1.0.9
+ *   - v1.0.9 (2026-04-28): TCPA SMS/email consent checkbox added on the
+ *     Confirm step. Required to submit alongside the existing weather
+ *     acknowledgement. The "Book my tune-up" button now stays disabled
+ *     until BOTH checkboxes are checked. State key: state.tcpaConsent
+ *     (mirrors state.weatherAcked). Reset on resetToPhone() so a fresh
+ *     phone-entry session always starts unchecked. No server-side
+ *     validation — client-side gate only, matching the main booking
+ *     widget's pattern.
  *   - v1.0.8 (2026-04-21): Calendar loading placeholder. First-load of
  *     /availability takes 4-5 seconds because the server pulls 60 days
  *     of HCP jobs + estimates + events, and during that wait the calendar
@@ -188,6 +196,11 @@
     selectedDate:  null,        // 'YYYY-MM-DD'
     selectedSlot:  null,        // { start, end, formatted, techId, techName }
     weatherAcked:  false,
+    // v1.0.9 — TCPA SMS/email consent. Required to submit; the
+    // "Book my tune-up" button stays disabled until both this AND
+    // weatherAcked are true. Reset on every resetToPhone() so a
+    // fresh session always starts unchecked.
+    tcpaConsent:   false,
 
     // After /confirm
     confirmation:  null,        // { service, date, time, name, phone, address, priceText }
@@ -1110,6 +1123,11 @@
 
       ${cmp.weatherCaveat ? `<div class="rcb-warn">${escapeHtml(cmp.weatherCaveat)}</div>` : ''}
 
+      <label class="rcb-checkbox-row" data-action="toggle-tcpa">
+        <input type="checkbox" id="rcb-tcpa-ack" ${state.tcpaConsent ? 'checked' : ''} />
+        <span>By submitting this form you consent to receive SMS and email messages from ${escapeHtml(CONFIG.companyName)} at the number and email provided. Consent is not a condition of purchase. Msg &amp; data rates may apply.</span>
+      </label>
+
       <label class="rcb-checkbox-row" data-action="toggle-weather">
         <input type="checkbox" id="rcb-weather-ack" ${state.weatherAcked ? 'checked' : ''} />
         <span>${escapeHtml(ackLabel)}</span>
@@ -1117,7 +1135,7 @@
 
       <div class="rcb-btn-row">
         <button class="rcb-btn rcb-btn-secondary" data-action="back-to-calendar">Back</button>
-        <button class="rcb-btn rcb-btn-primary" data-action="confirm-booking" ${state.weatherAcked ? '' : 'disabled'}>
+        <button class="rcb-btn rcb-btn-primary" data-action="confirm-booking" ${(state.weatherAcked && state.tcpaConsent) ? '' : 'disabled'}>
           Book my tune-up
         </button>
       </div>
@@ -1252,12 +1270,29 @@
 
     // Weather acknowledgement checkbox (manual handling so render doesn't
     // re-run on every keystroke)
+    // v1.0.9 — BOTH checkboxes must be checked before "Book my tune-up"
+    // is clickable: TCPA consent + weather acknowledgement. updateConfirmBtn()
+    // reads both flags so each checkbox can flip the button without stomping
+    // the other one's state. Pre-v1.0.9 this was a single inline check that
+    // assumed only weatherAcked mattered.
+    const updateConfirmBtn = () => {
+      const btn = root.querySelector('[data-action="confirm-booking"]');
+      if (btn) btn.disabled = !(state.weatherAcked && state.tcpaConsent);
+    };
+
     const weatherEl = root.querySelector('#rcb-weather-ack');
     if (weatherEl) {
       weatherEl.addEventListener('change', () => {
         state.weatherAcked = !!weatherEl.checked;
-        const btn = root.querySelector('[data-action="confirm-booking"]');
-        if (btn) btn.disabled = !state.weatherAcked;
+        updateConfirmBtn();
+      });
+    }
+
+    const tcpaEl = root.querySelector('#rcb-tcpa-ack');
+    if (tcpaEl) {
+      tcpaEl.addEventListener('change', () => {
+        state.tcpaConsent = !!tcpaEl.checked;
+        updateConfirmBtn();
       });
     }
 
@@ -1269,7 +1304,7 @@
         const date   = el.getAttribute('data-date');
         const index  = el.getAttribute('data-index');
 
-        if (action === 'pick-address' || action === 'toggle-weather') {
+        if (action === 'pick-address' || action === 'toggle-weather' || action === 'toggle-tcpa') {
           // Let the label fire its own input behavior; we still want to react
         } else {
           e.preventDefault();
@@ -1295,6 +1330,7 @@
       case 'goto-confirm':           return gotoConfirm();
       case 'back-to-calendar':       return backToCalendar();
       case 'toggle-weather':         return; // checkbox handler does the work
+      case 'toggle-tcpa':            return; // checkbox handler does the work
       case 'confirm-booking':        return confirmBooking();
       case 'goto-late-callback':     return gotoLateCallback();
       case 'submit-late-callback':   return submitLateCallback();
@@ -1377,6 +1413,7 @@
     state.selectedDate    = null;
     state.selectedSlot    = null;
     state.weatherAcked    = false;
+    state.tcpaConsent     = false;
     state.phoneInput      = '';
     state.error           = null;
     state.blockMessage    = null;
@@ -1560,6 +1597,11 @@
   }
 
   async function confirmBooking() {
+    if (!state.tcpaConsent) {
+      state.error = 'Please check the consent box to continue.';
+      render();
+      return;
+    }
     if (!state.weatherAcked) {
       state.error = 'Please acknowledge the weather notice to continue.';
       render();
