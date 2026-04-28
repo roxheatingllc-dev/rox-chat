@@ -1,5 +1,19 @@
 /**
- * ROX Booking Widget v1.9 - Self-Service Scheduling Wizard
+ * ROX Booking Widget v1.10 - Self-Service Scheduling Wizard
+ *
+ * v1.10 Changes (2026-04-28):
+ *   - FIX: Split single "Full Name" field into First Name + Last Name on
+ *           three name-capture points: QUICK_INFO, CONTACT_INFO, and the
+ *           exit-intent overlay. Previously, customers often typed only
+ *           their first name into the single field — abandon emails ended
+ *           up with subjects like "Abandoned Booking — Karen" instead of
+ *           "Abandoned Booking — Karen Smith". The server-side subject
+ *           template already uses the full name; the gap was that the
+ *           form wasn't requiring both halves. Two separate inputs make
+ *           the requirement obvious to the customer. state.data.name is
+ *           still maintained as the single combined string "First Last"
+ *           so server-side code that splits on whitespace (HCP customer
+ *           creation, abandon email subject) continues to work unchanged.
  *
  * v1.9 Changes (2026-04-28):
  *   - ADD: TCPA consent checkbox on Confirm + Message steps. Existing
@@ -173,6 +187,11 @@
       serviceType: null, customerType: null, systemAge: null,
       selectedDate: null, selectedSlot: null, issue: '',
       name: '', phone: '', email: '', message: '',
+      // v1.10 — name now collected as two separate fields. The combined
+      // "First Last" string is mirrored into state.data.name on every
+      // saveFormData() call so any code (server payloads, summaries,
+      // back-compat) reading state.data.name keeps working unchanged.
+      firstName: '', lastName: '',
       address: { street: '', city: '', state: 'CO', zip: '' },
       isPccMember: null,
       pccType: null, // 'cooling' or 'heating'
@@ -527,7 +546,19 @@
   function renderQuickInfo() {
     const errorHtml = state.error ? `<div class="rxb-error">${state.error}</div>` : '';
     const consentHtml = `<label class="rxb-consent"><input type="checkbox" id="rxb-tcpa" ${state.data._tcpaConsent ? 'checked' : ''}><span class="rxb-consent-text">By submitting this form you consent to receive SMS and email messages from ${CONFIG.companyName} at the number and email provided. Consent is not a condition of purchase. Msg &amp; data rates may apply.</span></label>`;
-    return `<div class="rxb-card"><div class="rxb-card-title">Quick Info</div><div class="rxb-card-subtitle">In case we get disconnected, we'd love to be able to reach you</div>${errorHtml}<div class="rxb-field"><label class="rxb-label">Full Name</label><input type="text" class="rxb-input" id="rxb-name" placeholder="John Smith" value="${state.data.name}" autocomplete="name"></div><div class="rxb-field"><label class="rxb-label">Phone Number</label><input type="tel" class="rxb-input" id="rxb-contact-phone" placeholder="(720) 555-1234" value="${formatPhone(state.data.phone)}" maxlength="14" autocomplete="tel"></div>${consentHtml}${renderNav(true, true)}</div>`;
+    // v1.10 — split into First Name + Last Name fields. Reuses the existing
+    // .rxb-input-row 2-column grid (also used for City + Zip). Pre-fills
+    // from firstName/lastName if set, OR from a previously-combined
+    // state.data.name (split on the first whitespace). The split-on-load
+    // matters when a customer lands here from a prior step that only knew
+    // the combined name string.
+    const fn = state.data.firstName || (state.data.name ? state.data.name.split(/\s+/)[0] : '');
+    const ln = state.data.lastName  || (state.data.name ? state.data.name.split(/\s+/).slice(1).join(' ') : '');
+    const nameRow = `<div class="rxb-input-row">`
+      + `<div class="rxb-field"><label class="rxb-label">First Name</label><input type="text" class="rxb-input" id="rxb-first-name" placeholder="John" value="${escapeHtml(fn)}" autocomplete="given-name"></div>`
+      + `<div class="rxb-field"><label class="rxb-label">Last Name</label><input type="text" class="rxb-input" id="rxb-last-name" placeholder="Smith" value="${escapeHtml(ln)}" autocomplete="family-name"></div>`
+      + `</div>`;
+    return `<div class="rxb-card"><div class="rxb-card-title">Quick Info</div><div class="rxb-card-subtitle">In case we get disconnected, we'd love to be able to reach you</div>${errorHtml}${nameRow}<div class="rxb-field"><label class="rxb-label">Phone Number</label><input type="tel" class="rxb-input" id="rxb-contact-phone" placeholder="(720) 555-1234" value="${formatPhone(state.data.phone)}" maxlength="14" autocomplete="tel"></div>${consentHtml}${renderNav(true, true)}</div>`;
   }
 
   function renderSystemAge() {
@@ -776,7 +807,17 @@
     if (isMessage) {
       zipField = `<div class="rxb-field"><label class="rxb-label">Zip Code</label><input type="text" class="rxb-input" id="rxb-zip" placeholder="80202" value="${state.data.address.zip}" maxlength="5" autocomplete="postal-code"></div>`;
     }
-    return `<div class="rxb-card"><div class="rxb-card-title">${title}</div><div class="rxb-card-subtitle">${subtitle}</div>${errorHtml}${zipWarning}<div class="rxb-field"><label class="rxb-label">Full Name</label><input type="text" class="rxb-input" id="rxb-name" placeholder="John Smith" value="${escapeHtml(state.data.name || '')}" autocomplete="name"></div><div class="rxb-field"><label class="rxb-label">Phone Number</label><input type="tel" class="rxb-input" id="rxb-contact-phone" placeholder="(720) 555-1234" value="${formatPhone(state.data.phone)}" maxlength="14" autocomplete="tel"></div><div class="rxb-field"><label class="rxb-label">Email Address</label><input type="email" class="rxb-input" id="rxb-email" placeholder="john@example.com" value="${escapeHtml(state.data.email || '')}" autocomplete="email"></div>${zipField}${renderNav(true, true)}</div>`;
+    // v1.10 — split First Name + Last Name (same pattern as QUICK_INFO).
+    // For existing customers coming from HCP lookup, state.data.name is
+    // already "First Last" — split it on the first whitespace so both
+    // fields pre-fill correctly.
+    const fn = state.data.firstName || (state.data.name ? state.data.name.split(/\s+/)[0] : '');
+    const ln = state.data.lastName  || (state.data.name ? state.data.name.split(/\s+/).slice(1).join(' ') : '');
+    const nameRow = `<div class="rxb-input-row">`
+      + `<div class="rxb-field"><label class="rxb-label">First Name</label><input type="text" class="rxb-input" id="rxb-first-name" placeholder="John" value="${escapeHtml(fn)}" autocomplete="given-name"></div>`
+      + `<div class="rxb-field"><label class="rxb-label">Last Name</label><input type="text" class="rxb-input" id="rxb-last-name" placeholder="Smith" value="${escapeHtml(ln)}" autocomplete="family-name"></div>`
+      + `</div>`;
+    return `<div class="rxb-card"><div class="rxb-card-title">${title}</div><div class="rxb-card-subtitle">${subtitle}</div>${errorHtml}${zipWarning}${nameRow}<div class="rxb-field"><label class="rxb-label">Phone Number</label><input type="tel" class="rxb-input" id="rxb-contact-phone" placeholder="(720) 555-1234" value="${formatPhone(state.data.phone)}" maxlength="14" autocomplete="tel"></div><div class="rxb-field"><label class="rxb-label">Email Address</label><input type="email" class="rxb-input" id="rxb-email" placeholder="john@example.com" value="${escapeHtml(state.data.email || '')}" autocomplete="email"></div>${zipField}${renderNav(true, true)}</div>`;
   }
 
   function renderMessage() {
@@ -1105,6 +1146,20 @@
     if (city) state.data.address.city = city.value.trim();
     const zip = root.querySelector('#rxb-zip');
     if (zip) state.data.address.zip = zip.value.trim();
+    // v1.10 — read First Name + Last Name from the split fields and combine
+    // into state.data.name (preserved as a single string for back-compat with
+    // server-side code that does data.name.split(' ')). Falls back to the old
+    // #rxb-name selector for any code path that still uses the single field
+    // (none in v1.10, but kept defensively).
+    const firstNameEl = root.querySelector('#rxb-first-name');
+    const lastNameEl  = root.querySelector('#rxb-last-name');
+    if (firstNameEl) state.data.firstName = firstNameEl.value.trim();
+    if (lastNameEl)  state.data.lastName  = lastNameEl.value.trim();
+    if (firstNameEl || lastNameEl) {
+      // Combine — handles edge case where only one half is filled in
+      state.data.name = `${state.data.firstName} ${state.data.lastName}`.trim();
+    }
+    // Defensive fallback for any legacy single-field name input
     const name = root.querySelector('#rxb-name');
     if (name) state.data.name = name.value.trim();
     const email = root.querySelector('#rxb-email');
@@ -1121,7 +1176,12 @@
         if (!state.data.customer && !state.data.phone) { state.error = 'Please enter your phone number.'; render(); return false; }
         return !!state.data.customer;
       case STEPS.QUICK_INFO:
-        if (!state.data.name || state.data.name.trim().length < 2) { state.error = 'Please enter your name.'; render(); return false; }
+        // v1.10 — validate first AND last name separately so customers
+        // can't slip through with just a first name. Both must be at
+        // least 1 character. Mirrors the HCP customer-creation contract
+        // which expects both first_name and last_name.
+        if (!state.data.firstName || state.data.firstName.trim().length < 1) { state.error = 'Please enter your first name.'; render(); return false; }
+        if (!state.data.lastName  || state.data.lastName.trim().length  < 1) { state.error = 'Please enter your last name.';  render(); return false; }
         if (!state.data.phone || state.data.phone.length < 10) { state.error = 'Please enter a valid phone number.'; render(); return false; }
         if (!state.data._tcpaConsent) { state.error = 'Please check the consent box to continue.'; render(); return false; }
         return true;
@@ -1141,7 +1201,12 @@
         state._zipWarning = false;
         return true;
       case STEPS.CONTACT_INFO:
-        if (!state.data.name) { state.error = 'Please enter your name.'; render(); return false; }
+        // v1.10 — same first + last validation as QUICK_INFO. CONTACT_INFO
+        // is reached by message-flow new customers (and as a confirmation
+        // step for booking new customers), so the name fields must be
+        // captured cleanly here too.
+        if (!state.data.firstName || state.data.firstName.trim().length < 1) { state.error = 'Please enter your first name.'; render(); return false; }
+        if (!state.data.lastName  || state.data.lastName.trim().length  < 1) { state.error = 'Please enter your last name.';  render(); return false; }
         if (!state.data.phone || state.data.phone.length < 10) { state.error = 'Please enter a valid phone number.'; render(); return false; }
         if (!state.data.email || !state.data.email.includes('@') || !state.data.email.includes('.')) { state.error = 'Please enter a valid email address.'; render(); return false; }
         // Message flow: validate zip on contact info
@@ -1390,7 +1455,8 @@
             <div style="font-size:32px;margin-bottom:12px;">\uD83D\uDCDE</div>
             <h3 style="margin:0 0 8px;font-size:20px;color:#1a1a1a;">Before you go!</h3>
             <p style="margin:0 0 20px;font-size:14px;color:#666;">Leave your info and our office will reach out to help you get scheduled.</p>
-            <input type="text" id="rxb-exit-name" placeholder="Your name" value="${state.data.name || ''}" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;margin-bottom:10px;font-size:14px;box-sizing:border-box;">
+            <input type="text" id="rxb-exit-first-name" placeholder="First name" autocomplete="given-name" value="${escapeHtml(state.data.firstName || (state.data.name ? state.data.name.split(/\s+/)[0] : ''))}" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;margin-bottom:8px;font-size:14px;box-sizing:border-box;">
+            <input type="text" id="rxb-exit-last-name" placeholder="Last name" autocomplete="family-name" value="${escapeHtml(state.data.lastName || (state.data.name ? state.data.name.split(/\s+/).slice(1).join(' ') : ''))}" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;margin-bottom:8px;font-size:14px;box-sizing:border-box;">
             <input type="tel" id="rxb-exit-phone" placeholder="Phone number" value="${state.data.phone ? formatPhone(state.data.phone) : ''}" maxlength="14" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;margin-bottom:16px;font-size:14px;box-sizing:border-box;">
             <button id="rxb-exit-submit" style="width:100%;padding:14px;background:${THEME.colors.primary};color:white;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;margin-bottom:10px;">Have Us Call You</button>
             <button id="rxb-exit-close" style="width:100%;padding:10px;background:none;border:none;color:#999;font-size:13px;cursor:pointer;">No thanks, I'll call later</button>
@@ -1399,17 +1465,26 @@
       document.body.appendChild(overlay);
 
       overlay.querySelector('#rxb-exit-submit').addEventListener('click', async () => {
-        const nameEl = overlay.querySelector('#rxb-exit-name');
-        const phoneEl = overlay.querySelector('#rxb-exit-phone');
-        const name = nameEl.value.trim();
-        const phone = phoneEl.value.replace(/\D/g, '');
-        if (!name || phone.length < 10) {
-          nameEl.style.borderColor = !name ? '#e74c3c' : '#ddd';
-          phoneEl.style.borderColor = phone.length < 10 ? '#e74c3c' : '#ddd';
+        // v1.10 — exit-intent overlay now collects First Name + Last Name
+        // separately. Validation requires both to be non-empty so the
+        // resulting abandon/follow-up email subject reliably has the full
+        // name. Both fields turn red on validation failure.
+        const firstNameEl = overlay.querySelector('#rxb-exit-first-name');
+        const lastNameEl  = overlay.querySelector('#rxb-exit-last-name');
+        const phoneEl     = overlay.querySelector('#rxb-exit-phone');
+        const firstName = firstNameEl.value.trim();
+        const lastName  = lastNameEl.value.trim();
+        const phone     = phoneEl.value.replace(/\D/g, '');
+        if (!firstName || !lastName || phone.length < 10) {
+          firstNameEl.style.borderColor = !firstName        ? '#e74c3c' : '#ddd';
+          lastNameEl.style.borderColor  = !lastName         ? '#e74c3c' : '#ddd';
+          phoneEl.style.borderColor     = phone.length < 10 ? '#e74c3c' : '#ddd';
           return;
         }
-        // Save to state
-        state.data.name = name;
+        // Save to state — combine first+last into the back-compat name field
+        state.data.firstName = firstName;
+        state.data.lastName  = lastName;
+        state.data.name      = `${firstName} ${lastName}`;
         state.data.phone = phone;
         // Send message to office
         try {
