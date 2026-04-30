@@ -1,5 +1,29 @@
 /**
- * ROX Booking Widget v1.10 - Self-Service Scheduling Wizard
+ * ROX Booking Widget v1.11 - Self-Service Scheduling Wizard
+ *
+ * v1.11 Changes (2026-04-30):
+ *   - FIX: Send firstName + lastName as separate fields to /update-session
+ *           (after QUICK_INFO and inside confirmBooking) and to /message
+ *           (submitMessage + exit-intent overlay). Previously only the
+ *           combined `name` string was sent, so the server had no way to
+ *           guarantee both halves were captured — if `state.data.name`
+ *           somehow held only the first name (browser autofill quirk,
+ *           empty lastName slipping past validation, or a stale cached
+ *           v1.9 widget on a customer’s browser), the abandoned-booking
+ *           email subject would read "Abandoned Booking — John" instead
+ *           of "Abandoned Booking — John Smith". Server-side v2.7.4 now
+ *           prefers `firstName + lastName` over the combined field; this
+ *           widget version supplies them so the defensive resolution has
+ *           the correct data to work with.
+ *   - FIX: Exit-intent overlay click handler was passing a bare `name`
+ *           identifier in the /message body. There is no local `name`
+ *           variable in that scope — only `firstName`, `lastName`, and
+ *           `phone` — so `name` resolved to `window.name` (the DOM
+ *           window-name property, almost always an empty string). Every
+ *           exit-intent message has been arriving at the office with
+ *           `Name:` blank in the subject. Now passes
+ *           `name: "${firstName} ${lastName}"` along with the explicit
+ *           firstName/lastName fields.
  *
  * v1.10 Changes (2026-04-28):
  *   - FIX: Split single "Full Name" field into First Name + Last Name on
@@ -1095,9 +1119,17 @@
     if (!validateStep()) return;
 
     // Push name + phone to server immediately after QUICK_INFO
-    // so abandon emails have contact info if customer leaves later
+    // so abandon emails have contact info if customer leaves later.
+    // v1.11 — also send firstName + lastName as separate fields so the
+    // server-side abandon email can guarantee a full name in the subject
+    // even if the combined `name` field somehow only holds the first half.
     if (state.currentStep === STEPS.QUICK_INFO) {
-      updateSession({ name: state.data.name, phone: state.data.phone });
+      updateSession({
+        name:      state.data.name,
+        firstName: state.data.firstName,
+        lastName:  state.data.lastName,
+        phone:     state.data.phone
+      });
     }
 
     // Declined-service checks at DESCRIBE_ISSUE step
@@ -1353,7 +1385,25 @@
     if (!state.data._tcpaConsent) { state.error = 'Please check the consent box to continue.'; render(); return; }
     state.loading = true; state.error = null; render();
     try {
-      await updateSession({ serviceType: state.data.serviceType, customerType: state.data.customerType, systemAge: state.data.systemAge, selectedDate: state.data.selectedDate, selectedSlot: state.data.selectedSlot, issue: state.data.issue, name: state.data.name, phone: state.data.phone, email: state.data.email, address: state.data.address, isPccMember: state.data.isPccMember || false, pccType: state.data.pccType || null });
+      // v1.11 — include firstName + lastName so the server can store them on
+      // the session for use in the abandon email if the customer never reaches
+      // the success screen but the session expires later.
+      await updateSession({
+        serviceType:  state.data.serviceType,
+        customerType: state.data.customerType,
+        systemAge:    state.data.systemAge,
+        selectedDate: state.data.selectedDate,
+        selectedSlot: state.data.selectedSlot,
+        issue:        state.data.issue,
+        name:         state.data.name,
+        firstName:    state.data.firstName,
+        lastName:     state.data.lastName,
+        phone:        state.data.phone,
+        email:        state.data.email,
+        address:      state.data.address,
+        isPccMember:  state.data.isPccMember || false,
+        pccType:      state.data.pccType || null
+      });
       const result = await api('POST', '/confirm', { sessionId: state.sessionId });
       state.loading = false;
       if (result.success) { state.confirmation = result.confirmation; state.currentStep = STEPS.SUCCESS; render(); }
@@ -1370,15 +1420,20 @@
     if (!state.data._tcpaConsent) { state.error = 'Please check the consent box to continue.'; render(); return; }
     state.loading = true; state.error = null; render();
     try {
+      // v1.11 — send firstName + lastName as separate fields so the
+      // server's `/message` endpoint can guarantee a full name in the
+      // email subject even if `name` somehow only has the first half.
       const result = await api('POST', '/message', {
-        sessionId: state.sessionId,
-        name: state.data.name,
-        phone: state.data.phone,
-        email: state.data.email,
-        zip: state.data.address.zip,
-        message: state.data.message,
+        sessionId:    state.sessionId,
+        name:         state.data.name,
+        firstName:    state.data.firstName,
+        lastName:     state.data.lastName,
+        phone:        state.data.phone,
+        email:        state.data.email,
+        zip:          state.data.address.zip,
+        message:      state.data.message,
         customerType: state.data.customerType,
-        customerId: state.data.customer?.id || null
+        customerId:   state.data.customer?.id || null
       });
       state.loading = false;
       if (result.success) {
@@ -1482,20 +1537,28 @@
           return;
         }
         // Save to state — combine first+last into the back-compat name field
+        const fullName = `${firstName} ${lastName}`.trim();
         state.data.firstName = firstName;
         state.data.lastName  = lastName;
-        state.data.name      = `${firstName} ${lastName}`;
+        state.data.name      = fullName;
         state.data.phone = phone;
-        // Send message to office
+        // Send message to office.
+        // v1.11 — explicit `name: fullName` (was a bare `name` identifier
+        // that resolved to `window.name`, almost always an empty string).
+        // Also send firstName/lastName separately so the server's /message
+        // endpoint can show the full name in the email subject reliably.
         try {
           await api('POST', '/message', {
-            sessionId: state.sessionId,
-            name, phone,
-            email: state.data.email || '',
-            zip: state.data.address?.zip || '',
-            message: 'Customer was browsing the booking page and left before completing. Please follow up.',
+            sessionId:    state.sessionId,
+            name:         fullName,
+            firstName,
+            lastName,
+            phone,
+            email:        state.data.email || '',
+            zip:          state.data.address?.zip || '',
+            message:      'Customer was browsing the booking page and left before completing. Please follow up.',
             customerType: state.data.customerType || 'new',
-            customerId: state.data.customer?.id || null
+            customerId:   state.data.customer?.id || null
           });
         } catch (e) { console.error('[ROX Booking] Exit capture send failed:', e.message); }
         overlay.innerHTML = '<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;"><div style="background:white;border-radius:12px;padding:32px;max-width:400px;width:90%;text-align:center;"><div style="font-size:32px;margin-bottom:12px;">\u2705</div><h3 style="margin:0 0 8px;">Got it!</h3><p style="color:#666;font-size:14px;">Someone from our team will reach out shortly.</p></div></div>';
