@@ -140,6 +140,31 @@ class RescheduleAdapter {
   }
 
   /**
+   * Resolve a short slug to its full HMAC token (v2.12.3+).
+   *
+   * The dashboard's reschedule SMS now uses URLs like:
+   *     roxheating.com/reschedule?t=abc12345
+   * The widget detects the ?t=<slug> param on mount and calls this to
+   * swap the slug for the full token, then proceeds exactly like the
+   * legacy ?token=<HMAC> flow. Backward compatible: legacy URLs that
+   * already carry the full token skip this expand step entirely.
+   *
+   * Engine returns:
+   *   200 { ok: true, token: '...' }   on success
+   *   400 missing_slug                   if no slug query param
+   *   404 not_found                      slug doesn't match any row
+   *   503 db_unavailable                 Postgres is down
+   *
+   * The adapter's base request() throws on any non-2xx with err.status
+   * set, so the route handler can pass the engine's status through to
+   * the widget. The widget renders 404 the same as a 401 from /load
+   * (generic 'this link can't be used right now' card).
+   */
+  async expand(slug) {
+    return this.request('GET', '/expand', null, { slug });
+  }
+
+  /**
    * Fire-and-forget climatology pre-warm. Called when the widget mounts
    * so the calendar's first render doesn't wait for cold-cache fan-outs.
    * Always returns 202 from the engine. Adapter catches any error and

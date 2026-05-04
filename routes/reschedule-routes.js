@@ -105,6 +105,35 @@ function forwardEngineError(err, res, fallbackMessage) {
 }
 
 // ----------------------------------------------------------------------
+// GET /api/reschedule/expand?slug=<slug>  (v2.12.3)
+// ----------------------------------------------------------------------
+// Resolves a customer-facing short slug into the full HMAC token. The
+// dashboard's reschedule SMS now uses URLs like:
+//     roxheating.com/reschedule?t=abc12345
+// The widget detects the ?t=<slug> param on mount and calls this BEFORE
+// /load. On success it stores the returned token in memory and proceeds
+// exactly like the legacy ?token=<HMAC> flow.
+//
+// Backward compatibility: legacy ?token=<HMAC> URLs skip this step and
+// go straight to /load. Both URL forms continue to work.
+//
+// Status passthrough: 400 missing_slug, 404 not_found, 503 db_unavailable.
+// The widget treats 404 the same as a 401 from /load (generic 'this link
+// can't be used right now' card).
+router.get('/expand', rateLimit, async (req, res) => {
+  try {
+    const { slug } = req.query;
+    if (!slug) {
+      return res.status(400).json({ error: 'missing_slug' });
+    }
+    const result = await adapter.expand(slug);
+    res.json(result);
+  } catch (err) {
+    forwardEngineError(err, res, 'expand_failed');
+  }
+});
+
+// ----------------------------------------------------------------------
 // GET /api/reschedule/load?token=<HMAC>
 // ----------------------------------------------------------------------
 // First call from the widget on mount. Verifies the token, loads the

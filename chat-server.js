@@ -1,8 +1,18 @@
 /**
- * ROX Chat Server v3.4
+ * ROX Chat Server v3.5
  * Express server for the embeddable chat widget, booking wizard, and quoting wizard.
- * 
- * v3.4 adds the customer self-serve reschedule proxy. Routes mounted at
+ *
+ * v3.5 (2026-05-04): Reschedule SMS short-link support.
+ *   - Adds GET /api/reschedule/expand?slug=<slug> proxy route. The
+ *     dashboard reschedule SMS now sends URLs like
+ *     roxheating.com/reschedule?t=abc12345 (~46 chars, single SMS
+ *     segment) instead of the v3.4 ?token=<HMAC> form (~190 chars,
+ *     two segments). The booking widget v1.13 detects the ?t=<slug>
+ *     param and calls /expand to swap it for the full HMAC token,
+ *     then proceeds exactly like the v3.4 long-token flow. Backward
+ *     compatible: existing ?token=<HMAC> URLs still work unchanged.
+ *
+ * v3.4 added the customer self-serve reschedule proxy. Routes mounted at
  * /api/reschedule/* forward to rox-ai-answering /api/engine/reschedule/*
  * via services/reschedule-adapter.js. Mounted dormant until the booking
  * widget's reschedule mode (Piece 2 of v2.12.0) ships.
@@ -109,7 +119,7 @@ if (require.main === module) {
   app.listen(PORT, '0.0.0.0', () => {
     console.log('╔══════════════════════════════════════════════╗');
     console.log('║       ROX CHAT - EMBEDDABLE WIDGET SERVER    ║');
-    console.log('║       Version: 3.4.0                         ║');
+    console.log('║       Version: 3.5.0                         ║');
     console.log('╚══════════════════════════════════════════════╝');
     console.log(`\n🚀 Server running on port ${PORT}`);
     console.log(`🔗 Engine: ${process.env.ENGINE_API_URL || 'http://localhost:3000/api/engine'}`);

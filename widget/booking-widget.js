@@ -1,5 +1,24 @@
 /**
- * ROX Booking Widget v1.12 - Self-Service Scheduling + Reschedule Wizard
+ * ROX Booking Widget v1.13 - Self-Service Scheduling + Reschedule Wizard
+ *
+ * v1.13 Changes (2026-05-04):
+ *   - ADD: Short-link URL support. The dashboard's reschedule SMS now
+ *           uses URLs like roxheating.com/reschedule?t=abc12345 (~46
+ *           chars, single SMS segment) instead of the legacy
+ *           ?token=<150-char-HMAC> form (~190 chars, two segments).
+ *           Widget detects the ?t=<slug> param on mount and calls a
+ *           new /api/reschedule/expand endpoint to swap the slug for
+ *           the full token before proceeding. Backward compatible:
+ *           legacy ?token=<HMAC> URLs skip the expand step entirely
+ *           and go straight to /load like in v1.12.
+ *   - ADD: getRescheduleSlugFromUrl() helper, parallels the existing
+ *           getTokenFromUrl() so the URL-parsing surface is symmetric.
+ *   - ADD: expandRescheduleSlug() helper, wraps the apiReschedule call
+ *           and surfaces a clear error if the slug doesn't resolve.
+ *           Slug-resolution failure (404, 503, anything else) maps to
+ *           the same generic 'this link can't be used right now -- call
+ *           us' fail card as a /load 401, since the customer experience
+ *           is identical (broken/expired link).
  *
  * v1.12 Changes (2026-05-04):
  *   - ADD: Reschedule mode. When the widget mounts on a URL that has a
@@ -1961,7 +1980,9 @@
   /**
    * Pull the ?token=<HMAC> from the page URL. Returns null if absent or
    * empty. Called once at init() to decide whether to enter reschedule
-   * mode or run the booking wizard.
+   * mode or run the booking wizard. v1.13: now ALSO checked alongside
+   * getRescheduleSlugFromUrl() to support both the legacy long-token URL
+   * form AND the new short-link ?t=<slug> form.
    */
   function getTokenFromUrl() {
     try {
@@ -1972,6 +1993,51 @@
       console.warn('[ROX Booking] getTokenFromUrl failed:', e.message);
       return null;
     }
+  }
+
+  /**
+   * v1.13: Pull the ?t=<slug> short-link param from the page URL. The
+   * dashboard's reschedule SMS now uses URLs like
+   *     roxheating.com/reschedule?t=abc12345
+   * (~46 chars, fits in one SMS segment) instead of the v1.12
+   * ?token=<HMAC> form (~190 chars, two segments). The slug must be
+   * resolved to a full HMAC token via /api/reschedule/expand before the
+   * rest of the reschedule flow can run -- see expandRescheduleSlug().
+   *
+   * Returns null if the param is absent or empty.
+   */
+  function getRescheduleSlugFromUrl() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const slug = params.get('t');
+      return (slug && slug.length > 0) ? slug : null;
+    } catch (e) {
+      console.warn('[ROX Booking] getRescheduleSlugFromUrl failed:', e.message);
+      return null;
+    }
+  }
+
+  /**
+   * v1.13: Resolve a short slug to its full HMAC token via the engine's
+   * /api/reschedule/expand proxy. Returns the token string on success;
+   * throws on failure so the caller can route the customer to the
+   * generic fail card. Failure modes (per engine spec):
+   *   400 missing_slug    -- shouldn't happen, we always pass slug
+   *   404 not_found       -- slug doesn't exist (link tampered, hand-typed,
+   *                          or row deleted by a future cleanup job)
+   *   503 db_unavailable  -- Postgres outage
+   * All three render the SAME 'call us' card -- customer doesn't need
+   * to know which one fired.
+   */
+  async function expandRescheduleSlug(slug) {
+    const result = await apiReschedule('GET', '/expand', null, { slug });
+    if (!result || !result.token) {
+      const err = new Error('expand returned no token');
+      err.status = 500;
+      err.body = { error: 'expand_no_token' };
+      throw err;
+    }
+    return result.token;
   }
 
   /**
@@ -2179,23 +2245,63 @@
     await loadTheme();
     injectStyles();
 
-    // ── v1.12 RESCHEDULE MODE BRANCH ──────────────────────────────────
-    // Check for ?token=<HMAC> in the URL BEFORE calling startSession().
-    // If present, we're in reschedule mode and skip the entire booking
-    // wizard: no /start session, no exit-intent overlay, no abandon
-    // beacon. The token is the only identity Anchor — the customer can
-    // come back any time within the 60-day window via the same SMS link.
+    // ── v1.12/v1.13 RESCHEDULE MODE BRANCH ────────────────────────────
+    // Check for either ?token=<HMAC> (legacy v1.12, still supported) OR
+    // ?t=<slug> (v1.13 short-link form) in the URL BEFORE calling
+    // startSession(). If either is present, we're in reschedule mode and
+    // skip the entire booking wizard: no /start session, no exit-intent
+    // overlay, no abandon beacon. Token/slug is the only identity anchor
+    // -- the customer can come back any time within the 60-day window
+    // via the same SMS link.
+    //
+    // If a slug is present, we call /api/reschedule/expand first to
+    // resolve it to a full token, then proceed exactly like the legacy
+    // path. If both ?token= and ?t= are somehow present (shouldn't
+    // happen but defensive), the long token wins because it bypasses
+    // the extra round-trip to /expand.
     const rescheduleToken = getTokenFromUrl();
-    if (rescheduleToken) {
-      console.log('[ROX Booking] Reschedule mode — token present in URL');
+    const rescheduleSlug = rescheduleToken ? null : getRescheduleSlugFromUrl();
+
+    if (rescheduleToken || rescheduleSlug) {
+      console.log('[ROX Booking] Reschedule mode -- ' + (rescheduleToken ? 'token' : 'slug') + ' present in URL');
       state._rescheduleMode = true;
-      state._rescheduleToken = rescheduleToken;
-      // Fire prewarm in the background so the calendar's first render
-      // doesn't pay the cold-cache cost. Always returns 202 immediately;
-      // the actual climatology fetches happen server-side fire-and-forget.
-      prewarmReschedule();
-      // Kick off the load → availability → calendar flow.
-      loadReschedule();
+
+      if (rescheduleToken) {
+        // Legacy v1.12 long-token URL -- proceed directly to /load.
+        state._rescheduleToken = rescheduleToken;
+        prewarmReschedule();
+        loadReschedule();
+      } else {
+        // v1.13 short-link URL -- resolve slug to token first, THEN
+        // proceed to /load. Show the loading spinner during the brief
+        // expand round-trip so the customer doesn't see a blank screen.
+        state.currentStep = STEPS.RESCHEDULE_LOAD;
+        state.loading = true;
+        render();
+        // Fire prewarm in parallel with expand -- they're independent and
+        // prewarm is fire-and-forget anyway, so doing both at once shaves
+        // a few hundred ms off the cold-start path.
+        prewarmReschedule();
+        expandRescheduleSlug(rescheduleSlug)
+          .then(function (token) {
+            state._rescheduleToken = token;
+            // loadReschedule() takes over from here -- it sets the step,
+            // calls /load, populates context, and either renders the
+            // calendar or the already-rescheduled card.
+            loadReschedule();
+          })
+          .catch(function (err) {
+            console.warn('[ROX Booking] Slug expand failed:', err && err.message);
+            // Map any expand failure (404/503/network/etc) to the same
+            // generic fail card the rest of the reschedule flow uses.
+            // The customer experience is identical: 'this link can't
+            // be used right now -- please call us'.
+            state._rescheduleFailMode = 'generic';
+            state.currentStep = STEPS.RESCHEDULE_FAIL;
+            state.loading = false;
+            render();
+          });
+      }
       return;
     }
 
