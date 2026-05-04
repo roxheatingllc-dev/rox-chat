@@ -1,6 +1,11 @@
 /**
- * ROX Chat Server v3.3
+ * ROX Chat Server v3.4
  * Express server for the embeddable chat widget, booking wizard, and quoting wizard.
+ * 
+ * v3.4 adds the customer self-serve reschedule proxy. Routes mounted at
+ * /api/reschedule/* forward to rox-ai-answering /api/engine/reschedule/*
+ * via services/reschedule-adapter.js. Mounted dormant until the booking
+ * widget's reschedule mode (Piece 2 of v2.12.0) ships.
  * 
  * Serves:
  *   - Chat Widget JS file (for embedding on any website)
@@ -21,6 +26,7 @@ const chatConfig = require('./config/chat-config');
 const chatRoutes = require('./routes/chat-routes');
 const themeRoutes = require('./routes/theme-routes');
 const bookingRoutes = require('./routes/booking-routes');
+const rescheduleRoutes = require('./routes/reschedule-routes');
 const clubBookingRoutes = require('./routes/club-booking-routes');
 const quoteLeadRoute = require('./routes/quote-lead');
 const configRoutes = require('./routes/config-routes');
@@ -71,6 +77,10 @@ app.use('/api/widget-config', configRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/themes', themeRoutes);
 app.use('/api/booking', bookingRoutes);
+// v2.12.0: customer self-serve reschedule. Proxies to rox-ai-answering
+// /api/engine/reschedule/* via services/reschedule-adapter.js. Mounted
+// dormant until the booking widget's reschedule mode (Piece 2) ships.
+app.use('/api/reschedule', rescheduleRoutes);
 app.use('/api/club-booking', clubBookingRoutes);
 app.use('/api/quote-lead', quoteLeadRoute);
 
@@ -99,7 +109,7 @@ if (require.main === module) {
   app.listen(PORT, '0.0.0.0', () => {
     console.log('╔══════════════════════════════════════════════╗');
     console.log('║       ROX CHAT - EMBEDDABLE WIDGET SERVER    ║');
-    console.log('║       Version: 3.3.0                         ║');
+    console.log('║       Version: 3.4.0                         ║');
     console.log('╚══════════════════════════════════════════════╝');
     console.log(`\n🚀 Server running on port ${PORT}`);
     console.log(`🔗 Engine: ${process.env.ENGINE_API_URL || 'http://localhost:3000/api/engine'}`);
