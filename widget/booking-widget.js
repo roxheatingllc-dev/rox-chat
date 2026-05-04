@@ -1,5 +1,40 @@
 /**
- * ROX Booking Widget v1.11 - Self-Service Scheduling Wizard
+ * ROX Booking Widget v1.12 - Self-Service Scheduling + Reschedule Wizard
+ *
+ * v1.12 Changes (2026-05-04):
+ *   - ADD: Reschedule mode. When the widget mounts on a URL that has a
+ *           ?token=... query parameter (the SMS deep link from the
+ *           dashboard self-serve reschedule flow), the widget skips the
+ *           entire booking wizard and renders a small calendar UI for
+ *           the customer to pick a new time for an existing appointment.
+ *   - ADD: 4 new STEPS constants — RESCHEDULE_LOAD, RESCHEDULE_CALENDAR,
+ *           RESCHEDULE_SUCCESS, RESCHEDULE_FAIL — used only when in
+ *           reschedule mode. They do NOT appear in any STEP_FLOW because
+ *           reschedule mode bypasses the wizard's progress-bar concept.
+ *   - ADD: apiReschedule() helper — parallels api()/apiGet() but hits
+ *           /api/reschedule/* on the rox-chat proxy instead of /api/booking/*.
+ *           Throws on non-2xx with err.status set so the caller can
+ *           branch on the engine's HTTP status (401/410/409/502/503).
+ *   - ADD: prewarmReschedule() — fire-and-forget call to /prewarm at
+ *           mount time so the calendar's first render isn't waiting on
+ *           14 sequential cold-cache fan-outs to Open-Meteo's archive
+ *           API. Server returns 202 immediately. Failure is silent.
+ *   - ADD: 5 failure-state cards. Per locked v2.12.0 design, statuses
+ *           401/410-passed/500/502/503 ALL render the same generic
+ *           "this link can't be used right now — please call (720)
+ *           468-0689" card. ONLY 409 (slot taken between render and
+ *           confirm) is special-cased into refetch + toast. ONLY the
+ *           already-rescheduled state (returned from /load as
+ *           state.alreadyRescheduled, NOT a 410 error) gets a special
+ *           "you've moved this to <new date>" card with offer to move
+ *           again.
+ *   - ADD: TOAST UI. A small banner at the top of the calendar card
+ *           that auto-dismisses after 5s. Used right now only for the
+ *           409 "that time was just taken" case but written generically
+ *           for any future ephemeral message.
+ *   - ADD: Exit-intent and beforeunload abandonment listeners are
+ *           SKIPPED in reschedule mode. The customer can always come
+ *           back via the SMS link, so there's no abandon to capture.
  *
  * v1.11 Changes (2026-04-30):
  *   - FIX: Send firstName + lastName as separate fields to /update-session
@@ -60,7 +95,7 @@
  *   };
  * </script>
  * <div id="rox-booking"></div>
- * <script src="https://rox-chat-production.up.railway.app/widget/booking-widget.js"></script>
+ * <script src="https://rox-chat-production.up.railway.app/widget/booking-widget.js?v=11"></script>
  * 
  * v1.4 Changes:
  *   - FIX: Push name+phone to server after QUICK_INFO so abandon emails have contact info
@@ -148,7 +183,15 @@
     PCC_TYPE: 'pcc_type',
     ROX_INSTALLED: 'rox_installed',
     WARRANTY_HANDOFF: 'warranty_handoff',
-    DECLINED: 'declined'          // Shown when a service type is not supported
+    DECLINED: 'declined',          // Shown when a service type is not supported
+    // ── v1.12 RESCHEDULE MODE STEPS ─────────────────────
+    // These four are NEVER part of any STEP_FLOW. They are only reached
+    // via the URL ?token=... entry path in init(). The progress bar is
+    // suppressed in reschedule mode (see render()).
+    RESCHEDULE_LOAD: 'reschedule_load',
+    RESCHEDULE_CALENDAR: 'reschedule_calendar',
+    RESCHEDULE_SUCCESS: 'reschedule_success',
+    RESCHEDULE_FAIL: 'reschedule_fail'
   };
 
   const STEP_FLOW = {
@@ -231,7 +274,19 @@
     _isAfterHours: false, // Set at session start from server
     _isSunday: false,     // Set at session start from server
     _declineMsg: null,    // Message shown on DECLINED step
-    _declineOfferEstimate: false // Whether to offer free estimate on decline screen
+    _declineOfferEstimate: false, // Whether to offer free estimate on decline screen
+    // ── v1.12 RESCHEDULE MODE STATE ─────────────────────
+    // All reschedule-only state is _reschedule*-prefixed so it's clear
+    // at a glance what belongs to the booking flow vs the reschedule
+    // flow. None of these fields are touched by the booking wizard's
+    // render functions.
+    _rescheduleMode: false,        // True iff URL had ?token=... at mount time
+    _rescheduleToken: null,        // The HMAC token from the URL (string)
+    _rescheduleContext: null,      // Result of /load
+    _rescheduleFailMode: null,     // 'generic' for 401/410-passed/500/502/503
+    _rescheduleToast: null,        // Ephemeral message shown above calendar (e.g., 409)
+    _rescheduleConfirmed: null,    // Result of /confirm — { jobId, newStartISO, newEndISO }
+    _rescheduleToastTimer: null    // setTimeout handle so toasts auto-clear
   };
 
   // ============================================
@@ -258,6 +313,51 @@
       throw new Error(err.error || err.message || `Request failed: ${res.status}`);
     }
     return res.json();
+  }
+
+  // ============================================
+  // RESCHEDULE API HELPER (v1.12)
+  // ============================================
+  // Parallels api() / apiGet() but hits the rox-chat reschedule proxy at
+  // /api/reschedule/*. The critical difference is that NON-2XX RESPONSES
+  // PRESERVE THE ENGINE'S HTTP STATUS CODE on the thrown Error object, so
+  // the caller can branch on err.status to distinguish:
+  //   401 → token bad/missing/expired
+  //   410 → appointment already passed
+  //   409 → slot taken between render and confirm (refetch + toast)
+  //   502 → HCP move failed
+  //   503 → DB or availability service down
+  //   500 → server bug
+  // The standard api() helper above collapses all non-2xx into a generic
+  // Error message; that's fine for the booking flow but useless for
+  // reschedule, where 409 must be handled differently from 401.
+  async function apiReschedule(method, path, body = null, queryParams = null) {
+    let url = `${CONFIG.serverUrl}/api/reschedule${path}`;
+    if (queryParams) {
+      const qs = new URLSearchParams(queryParams).toString();
+      if (qs) url += '?' + qs;
+    }
+    const options = {
+      method,
+      headers: { 'Content-Type': 'application/json' }
+    };
+    if (body) options.body = JSON.stringify(body);
+    const res = await fetch(url, options);
+    // Read body whether 2xx or not — engine returns structured JSON on
+    // errors too (e.g. { error: 'slot_taken' }) and the caller needs it.
+    let json;
+    try {
+      json = await res.json();
+    } catch (e) {
+      json = { error: `HTTP ${res.status}` };
+    }
+    if (!res.ok) {
+      const err = new Error(json.error || json.message || `Request failed: ${res.status}`);
+      err.status = res.status;     // <-- the bit booking api() drops
+      err.body = json;
+      throw err;
+    }
+    return json;
   }
 
   // ============================================
@@ -472,6 +572,23 @@
       .rxb-addr-item:hover { background: ${C.primaryLight}; color: ${C.primary}; }
       .rxb-addr-item small { display: block; font-size: 12px; color: ${C.textMuted}; margin-top: 2px; }
       .rxb-addr-loading { padding: 12px 16px; font-size: 13px; color: ${C.textMuted}; text-align: center; }
+      /* ── v1.12 RESCHEDULE MODE STYLES ──────────────── */
+      /* Toast: shows above the calendar after a 409 race-condition refetch.
+         Auto-dismisses after 5s via setTimeout in showRescheduleToast(). */
+      .rxb-toast { padding: 12px 16px; background: #FEF3C7; border: 1px solid #FCD34D; border-radius: ${R - 2}px; color: #92400E; font-size: 14px; line-height: 1.5; margin-bottom: 16px; animation: rxbFadeIn 0.3s ease; display: flex; align-items: center; gap: 10px; }
+      .rxb-toast-icon { font-size: 18px; flex-shrink: 0; }
+      /* "Move from X to Y" header: appears at the top of the reschedule
+         calendar so the customer can see what they're moving. */
+      .rxb-from-card { background: ${C.primaryLight}; border: 1px solid ${C.primaryBorder}; border-radius: ${R - 2}px; padding: 16px 20px; margin-bottom: 20px; }
+      .rxb-from-card h4 { font-size: 15px; font-weight: 600; color: ${C.text}; margin-bottom: 4px; }
+      .rxb-from-card p { font-size: 14px; color: ${C.textSecondary}; line-height: 1.5; }
+      .rxb-from-card strong { color: ${C.text}; font-weight: 600; }
+      /* Side-by-side button row used on the "already rescheduled" card.
+         Each button is full-width on mobile (single column), 50/50 on desktop. */
+      .rxb-btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px; }
+      @media (max-width: 480px) { .rxb-btn-row { grid-template-columns: 1fr; } }
+      .rxb-btn-secondary { padding: 12px 24px; font-size: 15px; font-weight: 500; color: ${C.text}; background: ${C.cardBg}; border: 1.5px solid ${C.cardBorder}; border-radius: ${R - 2}px; cursor: pointer; transition: all 0.2s ease; }
+      .rxb-btn-secondary:hover { border-color: ${C.primary}; color: ${C.primary}; }
       @media (max-width: 480px) { .rxb-card { padding: 24px 18px; } .rxb-header h2 { font-size: 22px; } .rxb-slots-grid { grid-template-columns: repeat(2, 1fr); } }
     `;
     document.head.appendChild(style);
@@ -494,18 +611,28 @@
 
   function render() {
     if (!root) return;
-    const stepIdx = getStepIndex();
-    const totalSteps = getTotalSteps();
-    const isMessage = state.data.serviceType === 'message';
-    const headerTitle = isMessage ? 'Send a Message' : 'Book an Appointment';
-    const headerSub = isMessage ? `Send a message to ${CONFIG.companyName}` : `Schedule your service with ${CONFIG.companyName}`;
-    let html = `<div class="rxb-header"><h2>${headerTitle}</h2><p>${headerSub}</p></div>`;
-    if (state.currentStep !== STEPS.SUCCESS) {
-      html += '<div class="rxb-progress">';
-      for (let i = 0; i < totalSteps; i++) {
-        html += `<div class="rxb-progress-segment${i <= stepIdx ? ' active' : ''}"></div>`;
+    let html = '';
+
+    // ── v1.12 — header for reschedule mode is different, and we
+    // suppress the booking wizard's progress bar (the reschedule flow
+    // has only 2-3 steps total — load → calendar → done — and a
+    // progress bar would feel oversized for that).
+    if (state._rescheduleMode) {
+      html += `<div class="rxb-header"><h2>Reschedule Your Appointment</h2><p>Pick a new time that works for you</p></div>`;
+    } else {
+      const stepIdx = getStepIndex();
+      const totalSteps = getTotalSteps();
+      const isMessage = state.data.serviceType === 'message';
+      const headerTitle = isMessage ? 'Send a Message' : 'Book an Appointment';
+      const headerSub = isMessage ? `Send a message to ${CONFIG.companyName}` : `Schedule your service with ${CONFIG.companyName}`;
+      html += `<div class="rxb-header"><h2>${headerTitle}</h2><p>${headerSub}</p></div>`;
+      if (state.currentStep !== STEPS.SUCCESS) {
+        html += '<div class="rxb-progress">';
+        for (let i = 0; i < totalSteps; i++) {
+          html += `<div class="rxb-progress-segment${i <= stepIdx ? ' active' : ''}"></div>`;
+        }
+        html += '</div>';
       }
-      html += '</div>';
     }
     html += renderStep();
     root.innerHTML = html;
@@ -531,6 +658,11 @@
       case STEPS.CONTACT_INFO: return renderContactInfo();
       case STEPS.CONFIRM: return renderConfirm();
       case STEPS.SUCCESS: return renderSuccess();
+      // v1.12 — reschedule mode steps
+      case STEPS.RESCHEDULE_LOAD: return renderRescheduleLoad();
+      case STEPS.RESCHEDULE_CALENDAR: return renderRescheduleCalendar();
+      case STEPS.RESCHEDULE_SUCCESS: return renderRescheduleSuccess();
+      case STEPS.RESCHEDULE_FAIL: return renderRescheduleFail();
       default: return '<p>Unknown step</p>';
     }
   }
@@ -905,6 +1037,350 @@
     return `<div class="rxb-nav">${showBack && !isFirst ? '<button class="rxb-back-btn" data-action="back">\u2190 Back</button>' : '<div></div>'}${showNext ? '<button class="rxb-next-btn" data-action="next">Continue \u2192</button>' : '<div></div>'}</div>`;
   }
 
+  // ============================================================
+  // RESCHEDULE MODE RENDER FUNCTIONS (v1.12)
+  // ============================================================
+  // Each renders one step in the reschedule flow. They all use the same
+  // .rxb-card / .rxb-success / .rxb-error CSS classes as the booking
+  // flow so visual consistency is preserved with no shared code coupling.
+
+  /**
+   * RESCHEDULE_LOAD step. Three sub-states:
+   *   1. Initial loading (state.loading=true, no _rescheduleContext yet) → spinner
+   *   2. Already-rescheduled (context.state.alreadyRescheduled=true) → special card
+   *      with the new time + buttons "Pick a new time" / "No, keep this one"
+   *   3. Briefly visible if context loaded but transitioning to RESCHEDULE_CALENDAR.
+   *      Defensive fallback shows spinner.
+   */
+  function renderRescheduleLoad() {
+    const C = THEME.colors;
+    const officePhone = (state._rescheduleContext && state._rescheduleContext.config && state._rescheduleContext.config.officePhone) || CONFIG.companyPhone;
+
+    if (state.loading || !state._rescheduleContext) {
+      return `<div class="rxb-card"><div class="rxb-loading"><div class="rxb-spinner"></div><div class="rxb-loading-text">Loading your appointment...</div></div></div>`;
+    }
+
+    const ctx = state._rescheduleContext;
+    const firstName = (ctx.customer && ctx.customer.firstName) || '';
+    const tz = (ctx.config && ctx.config.timezone) || 'America/Denver';
+
+    // Already-rescheduled card. The token stays valid for 60 days so they
+    // CAN move it again, but we want to make sure they know they already
+    // moved it and don't accidentally re-pick the same time thinking it's
+    // the original slot.
+    if (ctx.state && ctx.state.alreadyRescheduled) {
+      const newStartLabel = ctx.state.newScheduledStart
+        ? formatRescheduleDateTime(ctx.state.newScheduledStart, tz)
+        : 'your new time';
+      const greeting = firstName ? `Hi ${escapeHtml(firstName)}!` : 'Hi there!';
+      return `<div class="rxb-card">`
+        + `<div class="rxb-card-title">${greeting}</div>`
+        + `<div class="rxb-card-subtitle">You've already moved this appointment.</div>`
+        + `<div class="rxb-from-card">`
+        +   `<h4>Your appointment is currently scheduled for:</h4>`
+        +   `<p><strong>${escapeHtml(newStartLabel)}</strong></p>`
+        + `</div>`
+        + `<p style="font-size:14px;color:${C.textSecondary};line-height:1.6">Need to change it again? You can pick another time below.</p>`
+        + `<div class="rxb-btn-row">`
+        +   `<button class="rxb-btn-secondary" data-action="reschedule-keep-current">No, keep this one</button>`
+        +   `<button class="rxb-next-btn" data-action="reschedule-pick-new-time">Pick a new time</button>`
+        + `</div>`
+        + `<p style="margin-top:20px;font-size:13px;color:${C.textMuted};text-align:center">Questions? Call us at <strong>${officePhone}</strong></p>`
+        + `</div>`;
+    }
+
+    // Defensive fallback — context loaded, not already-rescheduled, but
+    // somehow still on RESCHEDULE_LOAD. loadRescheduleAvailability should
+    // have moved us to RESCHEDULE_CALENDAR by now.
+    return `<div class="rxb-card"><div class="rxb-loading"><div class="rxb-spinner"></div><div class="rxb-loading-text">Loading available times...</div></div></div>`;
+  }
+
+  /**
+   * RESCHEDULE_CALENDAR step. Header card showing the original
+   * appointment time + a calendar grid + slot grid + "Confirm New Time"
+   * button. Reuses the same CSS classes as the booking calendar so styling
+   * stays in lockstep, but the surrounding logic is reschedule-specific
+   * (no pricing banner, no Saturday fee disclosure, no "book further out"
+   * button, no progress bar).
+   *
+   * Toast: if state._rescheduleToast is set (e.g., after a 409 race
+   * condition refetched availability), shown at the top of the card.
+   * Auto-clears 5 seconds after it was shown via setTimeout.
+   */
+  function renderRescheduleCalendar() {
+    const C = THEME.colors;
+
+    if (state.loading) {
+      return `<div class="rxb-card"><div class="rxb-loading"><div class="rxb-spinner"></div><div class="rxb-loading-text">Looking up available times...</div></div></div>`;
+    }
+
+    const ctx = state._rescheduleContext || {};
+    const firstName = (ctx.customer && ctx.customer.firstName) || '';
+    const tz = (ctx.config && ctx.config.timezone) || 'America/Denver';
+    const currentStartISO = (ctx.appointment && ctx.appointment.currentStartISO) || (ctx.appointment && ctx.appointment.originalStartISO);
+    const currentLabel = currentStartISO ? formatRescheduleDateTime(currentStartISO, tz) : 'your appointment';
+    const greetingText = firstName ? `Hi ${escapeHtml(firstName)}, ` : '';
+
+    const fromCardHtml = `<div class="rxb-from-card">`
+      + `<h4>${greetingText}let's move your appointment.</h4>`
+      + `<p>Currently scheduled for: <strong>${escapeHtml(currentLabel)}</strong></p>`
+      + `</div>`;
+
+    const toastHtml = state._rescheduleToast
+      ? `<div class="rxb-toast"><span class="rxb-toast-icon">\u26A0\uFE0F</span><span>${escapeHtml(state._rescheduleToast)}</span></div>`
+      : '';
+
+    const errorHtml = state.error ? `<div class="rxb-error">${escapeHtml(state.error)}</div>` : '';
+
+    if (!state.availability || !state.availability.availableDays || state.availability.availableDays.length === 0) {
+      const officePhone = (ctx.config && ctx.config.officePhone) || CONFIG.companyPhone;
+      return `<div class="rxb-card">`
+        + fromCardHtml
+        + toastHtml
+        + errorHtml
+        + `<div style="text-align:center;padding:30px 0">`
+        +   `<p style="font-size:16px;margin-bottom:12px">No available times found in the next ${(ctx.config && ctx.config.maxDaysAhead) || 30} days.</p>`
+        +   `<p style="font-size:14px;color:${C.textSecondary}">Please call us at <strong>${officePhone}</strong> and we'll find a time that works.</p>`
+        + `</div>`
+        + `</div>`;
+    }
+
+    const availDates = new Set(state.availability.availableDays.map(d => d.date));
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const calMonth = (typeof state._calMonth === 'number') ? state._calMonth : today.getMonth();
+    const calYear = (typeof state._calYear === 'number') ? state._calYear : today.getFullYear();
+    const firstDay = new Date(calYear, calMonth, 1);
+    const lastDay = new Date(calYear, calMonth + 1, 0);
+    const startDow = firstDay.getDay();
+    const daysInMonth = lastDay.getDate();
+    const monthName = firstDay.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    let daysHtml = '';
+    ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(d => { daysHtml += `<div class="rxb-cal-dow">${d}</div>`; });
+    for (let i = 0; i < startDow; i++) { daysHtml += '<div class="rxb-cal-day empty"></div>'; }
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateObj = new Date(calYear, calMonth, d);
+      const dateStr = dateObj.toISOString().split('T')[0];
+      const isPast = dateObj < today;
+      const isToday = dateObj.getTime() === today.getTime();
+      const isAvail = availDates.has(dateStr);
+      const isSelected = state.data.selectedDate === dateStr;
+      let cls = 'rxb-cal-day';
+      if (isPast) cls += ' past';
+      if (isToday) cls += ' today';
+      if (isAvail && !isPast) cls += ' available';
+      if (isSelected) cls += ' selected';
+      const clickable = isAvail && !isPast;
+      daysHtml += `<button class="${cls}" ${clickable ? `data-action="select-date" data-value="${dateStr}"` : 'disabled'}>${d}</button>`;
+    }
+
+    let slotsHtml = '';
+    if (state.data.selectedDate) {
+      const dayData = state.availability.availableDays.find(d => d.date === state.data.selectedDate);
+      if (dayData && dayData.slots.length > 0) {
+        const seen = new Set();
+        const uniqueSlots = [];
+        for (let i = 0; i < dayData.slots.length; i++) {
+          const s = dayData.slots[i];
+          const key = s.start instanceof Date ? s.start.toISOString() : String(s.start);
+          if (!seen.has(key)) {
+            seen.add(key);
+            uniqueSlots.push({ ...s, originalIdx: i });
+          }
+        }
+        uniqueSlots.sort((a, b) => new Date(a.start) - new Date(b.start));
+        const shortLabel = (s) => {
+          try {
+            const st = new Date(s.start);
+            const en = new Date(s.end);
+            const fmt = (d) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz });
+            return fmt(st) + ' - ' + fmt(en);
+          } catch (e) { return s.formatted || ''; }
+        };
+        slotsHtml = `<div class="rxb-slots">`
+          + `<div class="rxb-slots-title">Available times for ${dayData.displayDate}</div>`
+          + `<div class="rxb-slots-grid">${uniqueSlots.map(s => {
+              const selected = state.data.selectedSlot && state.data.selectedSlot.start && new Date(state.data.selectedSlot.start).getTime() === new Date(s.start).getTime();
+              return `<button class="rxb-slot-btn${selected ? ' selected' : ''}" data-action="select-slot" data-idx="${s.originalIdx}">${shortLabel(s)}</button>`;
+            }).join('')}</div>`
+          + `</div>`;
+      }
+    }
+
+    const maxDaysAhead = (ctx.config && ctx.config.maxDaysAhead) || 30;
+    const canPrev = calMonth > today.getMonth() || calYear > today.getFullYear();
+    const maxDate = new Date(); maxDate.setDate(maxDate.getDate() + maxDaysAhead);
+    const canNext = new Date(calYear, calMonth + 1, 1) <= maxDate;
+
+    const canConfirm = !!state.data.selectedSlot;
+    const confirmBtnHtml = `<div class="rxb-nav" style="border-top:none;margin-top:24px;padding-top:0">`
+      + `<div></div>`
+      + `<button class="rxb-next-btn" data-action="reschedule-confirm" ${canConfirm ? '' : 'disabled'}>Confirm New Time \u2714</button>`
+      + `</div>`;
+
+    return `<div class="rxb-card">`
+      + fromCardHtml
+      + toastHtml
+      + errorHtml
+      + `<div class="rxb-calendar">`
+      +   `<div class="rxb-cal-header">`
+      +     `<button class="rxb-cal-nav-btn" data-action="cal-prev" ${!canPrev ? 'disabled' : ''}>\u2039</button>`
+      +     `<div class="rxb-cal-title">${monthName}</div>`
+      +     `<button class="rxb-cal-nav-btn" data-action="cal-next" ${!canNext ? 'disabled' : ''}>\u203A</button>`
+      +   `</div>`
+      +   `<div class="rxb-cal-grid">${daysHtml}</div>`
+      + `</div>`
+      + slotsHtml
+      + confirmBtnHtml
+      + `</div>`;
+  }
+
+  /**
+   * RESCHEDULE_SUCCESS — confirmation that the move succeeded.
+   */
+  function renderRescheduleSuccess() {
+    const C = THEME.colors;
+    const ctx = state._rescheduleContext || {};
+    const tz = (ctx.config && ctx.config.timezone) || 'America/Denver';
+    const officePhone = (ctx.config && ctx.config.officePhone) || CONFIG.companyPhone;
+    const conf = state._rescheduleConfirmed || {};
+    const newStartISO = conf.newStartISO || '';
+    const newLabel = newStartISO ? formatRescheduleDateTime(newStartISO, tz) : 'your new time';
+
+    return `<div class="rxb-card">`
+      + `<div class="rxb-success">`
+      +   `<div class="rxb-success-icon">\u2714</div>`
+      +   `<h3>You're All Set!</h3>`
+      +   `<p>Your appointment has been moved to:</p>`
+      +   `<p style="margin-top:12px;font-size:18px;font-weight:600;color:${C.text}">${escapeHtml(newLabel)}</p>`
+      +   `<p style="margin-top:18px;font-size:14px;color:${C.textSecondary}">We've notified our office. There's nothing else you need to do.</p>`
+      +   `<p style="margin-top:24px;font-size:13px;color:${C.textMuted}">Questions? Call us at <strong>${officePhone}</strong></p>`
+      + `</div>`
+      + `</div>`;
+  }
+
+  /**
+   * RESCHEDULE_FAIL — generic "this link can't be used right now —
+   * please call us" card. Shown for ALL of: 401 (token bad), 410-passed
+   * (appointment already happened), 500 (server bug), 502 (HCP failure),
+   * 503 (DB outage). The customer doesn't need to know the technical
+   * reason — the only useful action is "call the office", same in
+   * every case.
+   *
+   * 409 (slot taken) is NOT a fail card — it's handled inline as a toast
+   * + refetch in confirmReschedule(). Already-rescheduled is NOT an
+   * error — it's a state from /load, rendered by renderRescheduleLoad().
+   */
+  function renderRescheduleFail() {
+    const C = THEME.colors;
+    const ctx = state._rescheduleContext || {};
+    const officePhone = (ctx.config && ctx.config.officePhone) || CONFIG.companyPhone;
+    const telHref = officePhone.replace(/\D/g, '');
+
+    return `<div class="rxb-card">`
+      + `<div class="rxb-success">`
+      +   `<div class="rxb-success-icon" style="background:#FFF7ED;border-color:#FDBA74;color:#C2410C;font-size:26px">\u26A0\uFE0F</div>`
+      +   `<h3>We Can't Update This Online Right Now</h3>`
+      +   `<p style="color:${C.textSecondary}">This link can't be used to reschedule at the moment.</p>`
+      +   `<p style="margin-top:18px;font-size:15px;color:${C.text}">Please give us a call and we'll get you taken care of:</p>`
+      +   `<p style="margin-top:8px;font-size:22px;font-weight:700;color:${C.primary}"><a href="tel:${telHref}" style="color:inherit;text-decoration:none">${officePhone}</a></p>`
+      + `</div>`
+      + `</div>`;
+  }
+
+  /**
+   * Format an ISO timestamp like "2026-05-06T15:00:00Z" into a friendly
+   * "Wednesday, May 6 at 3:00 PM" string in the given timezone. Falls
+   * back gracefully on bad input rather than showing "Invalid Date".
+   */
+  function formatRescheduleDateTime(iso, timezone) {
+    try {
+      const tz = timezone || 'America/Denver';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      const dayPart = d.toLocaleDateString('en-US', {
+        weekday: 'long', month: 'long', day: 'numeric', timeZone: tz
+      });
+      const timePart = d.toLocaleTimeString('en-US', {
+        hour: 'numeric', minute: '2-digit', timeZone: tz
+      });
+      return `${dayPart} at ${timePart}`;
+    } catch (e) {
+      console.warn('[ROX Booking] formatRescheduleDateTime failed:', e.message);
+      return '';
+    }
+  }
+
+  /**
+   * Transform the engine's flat /availability slots array into the
+   * { availableDays: [{date, displayDate, dayOfWeek, slots: [...]}] }
+   * shape the calendar render function expects. Dedupes by start time
+   * within each day and sorts slots chronologically.
+   *
+   * Engine input shape: { startISO, endISO, techId, techName, dateISO }
+   */
+  function groupRescheduleSlots(flatSlots, timezone) {
+    const tz = timezone || 'America/Denver';
+    const byDate = new Map();
+
+    for (const s of (flatSlots || [])) {
+      if (!s || !s.startISO || !s.dateISO) continue;
+      if (!byDate.has(s.dateISO)) byDate.set(s.dateISO, new Map());
+      const dayMap = byDate.get(s.dateISO);
+      if (!dayMap.has(s.startISO)) {
+        const startDate = new Date(s.startISO);
+        const endDate = new Date(s.endISO);
+        if (isNaN(startDate.getTime())) continue;
+        const fmt = (d) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz });
+        const formatted = !isNaN(endDate.getTime()) ? `${fmt(startDate)} - ${fmt(endDate)}` : fmt(startDate);
+        dayMap.set(s.startISO, {
+          start: startDate,
+          end: !isNaN(endDate.getTime()) ? endDate : startDate,
+          formatted,
+          techId: s.techId || null,
+          techName: s.techName || null
+        });
+      }
+    }
+
+    const availableDays = [];
+    for (const [dateISO, dayMap] of byDate) {
+      const slots = Array.from(dayMap.values()).sort((a, b) => a.start - b.start);
+      const dateObj = new Date(dateISO + 'T12:00:00Z');
+      const displayDate = dateObj.toLocaleDateString('en-US', {
+        weekday: 'long', month: 'long', day: 'numeric', timeZone: tz
+      });
+      const dayOfWeek = dateObj.toLocaleDateString('en-US', {
+        weekday: 'long', timeZone: tz
+      });
+      availableDays.push({ date: dateISO, displayDate, dayOfWeek, slots });
+    }
+    availableDays.sort((a, b) => a.date.localeCompare(b.date));
+    return { availableDays };
+  }
+
+  /**
+   * Show an ephemeral toast above the reschedule calendar. Auto-clears
+   * after `durationMs` (default 5s). If a previous toast timer is still
+   * running, it's cancelled so the new toast gets its own full duration.
+   */
+  function showRescheduleToast(message, durationMs) {
+    const ms = typeof durationMs === 'number' ? durationMs : 5000;
+    if (state._rescheduleToastTimer) {
+      clearTimeout(state._rescheduleToastTimer);
+      state._rescheduleToastTimer = null;
+    }
+    state._rescheduleToast = message;
+    state._rescheduleToastTimer = setTimeout(() => {
+      state._rescheduleToast = null;
+      state._rescheduleToastTimer = null;
+      // Re-render only if we're still on the calendar — if the user has
+      // moved on to success/fail, the toast is irrelevant.
+      if (state.currentStep === STEPS.RESCHEDULE_CALENDAR) render();
+    }, ms);
+  }
+
   // ============================================
   // EVENT HANDLERS
   // ============================================
@@ -1097,6 +1573,33 @@
           state.path = 'message_new';
           goToStep(STEPS.CONTACT_INFO);
         }
+        break;
+      // ── v1.12 RESCHEDULE MODE ACTIONS ────────────────────────────
+      case 'reschedule-pick-new-time':
+        // Customer was on the "already rescheduled" card and chose to
+        // change the time again. Clear any prior selections and load
+        // availability fresh.
+        state.data.selectedDate = null;
+        state.data.selectedSlot = null;
+        loadRescheduleAvailability();
+        break;
+      case 'reschedule-keep-current':
+        // Customer was on the "already rescheduled" card and chose to
+        // keep the existing rescheduled time. Reuse the success card
+        // with the already-rescheduled timestamp so it reads as a clean
+        // confirmation.
+        if (state._rescheduleContext && state._rescheduleContext.state && state._rescheduleContext.state.newScheduledStart) {
+          state._rescheduleConfirmed = {
+            jobId: state._rescheduleContext.appointment ? state._rescheduleContext.appointment.jobId : null,
+            newStartISO: state._rescheduleContext.state.newScheduledStart,
+            newEndISO: null
+          };
+        }
+        state.currentStep = STEPS.RESCHEDULE_SUCCESS;
+        render();
+        break;
+      case 'reschedule-confirm':
+        await confirmReschedule();
         break;
     }
   }
@@ -1452,6 +1955,195 @@
   }
 
   // ============================================
+  // RESCHEDULE API ACTIONS (v1.12)
+  // ============================================
+
+  /**
+   * Pull the ?token=<HMAC> from the page URL. Returns null if absent or
+   * empty. Called once at init() to decide whether to enter reschedule
+   * mode or run the booking wizard.
+   */
+  function getTokenFromUrl() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('token');
+      return (token && token.length > 0) ? token : null;
+    } catch (e) {
+      console.warn('[ROX Booking] getTokenFromUrl failed:', e.message);
+      return null;
+    }
+  }
+
+  /**
+   * Fire-and-forget climatology prewarm. Runs at mount time so the
+   * calendar's first /availability call doesn't pay the cold-cache cost
+   * for 14+ Open-Meteo archive lookups. Server returns 202 immediately;
+   * the actual work happens in the background. Failure is logged but
+   * never propagated — prewarm is a pure optimization.
+   */
+  function prewarmReschedule() {
+    try {
+      // No await — we don't block the user on this. Use .catch so an
+      // unhandled rejection doesn't surface in the browser console.
+      apiReschedule('POST', '/prewarm', { daysAhead: 30 }).catch(err => {
+        console.warn('[ROX Booking] Prewarm failed (non-fatal):', err.message || err);
+      });
+    } catch (e) {
+      console.warn('[ROX Booking] Prewarm threw (non-fatal):', e.message);
+    }
+  }
+
+  /**
+   * Map an error from apiReschedule() to the right failure mode and
+   * step. Per locked v2.12.0 design, statuses 401/410-passed/500/502/503
+   * all render the SAME generic "call us" card — only 409 (slot taken)
+   * gets special handling, and that's done inline at the call site
+   * (confirmReschedule) rather than here.
+   *
+   * Logs the status + error code (without the token, which is in the
+   * URL but never in our logs) so Railway logs can distinguish customer
+   * issues from server issues.
+   */
+  function mapRescheduleErrorToFail(err) {
+    const status = err && err.status;
+    const code = err && err.body && (err.body.code || err.body.error);
+    console.warn(`[ROX Booking] Reschedule failed: status=${status} code=${code} message=${err && err.message}`);
+    state._rescheduleFailMode = 'generic';
+    state.currentStep = STEPS.RESCHEDULE_FAIL;
+    state.loading = false;
+    render();
+  }
+
+  /**
+   * Initial load. Verify the token via /load, populate context, then
+   * either show the already-rescheduled card OR fetch availability and
+   * render the calendar. Called once at mount time from init() when a
+   * token is present.
+   */
+  async function loadReschedule() {
+    state.loading = true;
+    state.error = null;
+    state.currentStep = STEPS.RESCHEDULE_LOAD;
+    render();
+
+    try {
+      const result = await apiReschedule('GET', '/load', null, { token: state._rescheduleToken });
+      state._rescheduleContext = result;
+      state.loading = false;
+
+      // Already-rescheduled state — show the special card. Customer can
+      // tap "Pick a new time" to proceed (which will invoke
+      // loadRescheduleAvailability) or "Keep this one" to confirm.
+      if (result && result.state && result.state.alreadyRescheduled) {
+        render();
+        return;
+      }
+
+      // Normal path — fetch availability and switch to calendar.
+      await loadRescheduleAvailability();
+    } catch (err) {
+      mapRescheduleErrorToFail(err);
+    }
+  }
+
+  /**
+   * Fetch eligible slots from /availability and render the calendar.
+   * Also called when the customer taps "Pick a new time" from the
+   * already-rescheduled card.
+   */
+  async function loadRescheduleAvailability() {
+    state.loading = true;
+    state.error = null;
+    state.currentStep = STEPS.RESCHEDULE_CALENDAR;
+    render();
+
+    try {
+      const ctx = state._rescheduleContext || {};
+      const tz = (ctx.config && ctx.config.timezone) || 'America/Denver';
+      const result = await apiReschedule('POST', '/availability', {
+        token: state._rescheduleToken,
+        daysAhead: (ctx.config && ctx.config.maxDaysAhead) || 30
+      });
+
+      // Transform engine's flat slots[] → calendar's grouped shape.
+      state.availability = groupRescheduleSlots(result.slots || [], tz);
+      state.loading = false;
+
+      // Initialize calendar nav to the month of the first available day,
+      // so the customer doesn't have to navigate forward to find slots.
+      if (state.availability.availableDays.length > 0) {
+        const firstDateISO = state.availability.availableDays[0].date;
+        const firstDate = new Date(firstDateISO + 'T12:00:00');
+        state._calMonth = firstDate.getMonth();
+        state._calYear = firstDate.getFullYear();
+      }
+      render();
+    } catch (err) {
+      mapRescheduleErrorToFail(err);
+    }
+  }
+
+  /**
+   * Customer tapped "Confirm New Time". POST /confirm with the selected
+   * slot's startISO. Three outcomes:
+   *   200 → success card (state._rescheduleConfirmed populated)
+   *   409 → slot taken between render and confirm. Show toast + refetch
+   *         availability. Customer picks again. Token stays valid.
+   *   anything else → fail card.
+   */
+  async function confirmReschedule() {
+    if (!state.data.selectedSlot || !state.data.selectedSlot.start) {
+      // Defensive — render should have disabled the button without a
+      // selection, but if we somehow got here, show inline error.
+      state.error = 'Please pick a time first.';
+      render();
+      return;
+    }
+
+    state.loading = true;
+    state.error = null;
+    render();
+
+    // Selected slot's start could be a Date object (from groupRescheduleSlots)
+    // or an ISO string — normalize to ISO for the wire.
+    const startVal = state.data.selectedSlot.start;
+    const slotStartISO = (startVal instanceof Date) ? startVal.toISOString() : String(startVal);
+
+    try {
+      const result = await apiReschedule('POST', '/confirm', {
+        token: state._rescheduleToken,
+        slotStartISO
+      });
+
+      // Success — record the confirmed appointment and switch to the
+      // success card.
+      state._rescheduleConfirmed = (result && result.appointment) ? result.appointment : { newStartISO: slotStartISO };
+      state.loading = false;
+      state.currentStep = STEPS.RESCHEDULE_SUCCESS;
+      render();
+    } catch (err) {
+      // 409 — race-condition slot taken. Per locked design, refetch
+      // availability and toast. The customer just picks another time.
+      // We do NOT switch them to the fail card here.
+      if (err && err.status === 409) {
+        console.log('[ROX Booking] 409 slot taken — refetching availability');
+        // Clear the selected slot so they have to pick fresh.
+        state.data.selectedSlot = null;
+        state.data.selectedDate = null;
+        showRescheduleToast('That time was just taken — please pick another.');
+        // loadRescheduleAvailability sets loading=true and renders, then
+        // re-renders when slots come back. The toast is preserved on
+        // those renders (state._rescheduleToast is its own field).
+        await loadRescheduleAvailability();
+        return;
+      }
+
+      // All other errors → generic fail card.
+      mapRescheduleErrorToFail(err);
+    }
+  }
+
+  // ============================================
   // UTILITY FUNCTIONS
   // ============================================
   // Strip country code "1" from 11-digit numbers (autofill adds +1)
@@ -1486,6 +2178,28 @@
     container.appendChild(root);
     await loadTheme();
     injectStyles();
+
+    // ── v1.12 RESCHEDULE MODE BRANCH ──────────────────────────────────
+    // Check for ?token=<HMAC> in the URL BEFORE calling startSession().
+    // If present, we're in reschedule mode and skip the entire booking
+    // wizard: no /start session, no exit-intent overlay, no abandon
+    // beacon. The token is the only identity Anchor — the customer can
+    // come back any time within the 60-day window via the same SMS link.
+    const rescheduleToken = getTokenFromUrl();
+    if (rescheduleToken) {
+      console.log('[ROX Booking] Reschedule mode — token present in URL');
+      state._rescheduleMode = true;
+      state._rescheduleToken = rescheduleToken;
+      // Fire prewarm in the background so the calendar's first render
+      // doesn't pay the cold-cache cost. Always returns 202 immediately;
+      // the actual climatology fetches happen server-side fire-and-forget.
+      prewarmReschedule();
+      // Kick off the load → availability → calendar flow.
+      loadReschedule();
+      return;
+    }
+
+    // ── BOOKING MODE (default) ─────────────────────────────────────────
     await startSession();
     render();
 
