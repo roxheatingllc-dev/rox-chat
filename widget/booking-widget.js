@@ -1,5 +1,5 @@
 /**
- * ROX Booking Widget v1.13 - Self-Service Scheduling + Reschedule Wizard
+ * ROX Booking Widget v1.14 - Per-Widget Booking Horizon
  *
  * v1.13 Changes (2026-05-04):
  *   - ADD: Short-link URL support. The dashboard's reschedule SMS now
@@ -292,6 +292,10 @@
     _weather: null,      // Map of YYYY-MM-DD → high temp in °F (from Open-Meteo)
     _isAfterHours: false, // Set at session start from server
     _isSunday: false,     // Set at session start from server
+    // v1.14: Booking horizon (days ahead the calendar shows). Captured
+    // from /start response. Falls back to 28 if the server is older
+    // than v2.13.0 and didn't return the field.
+    _bookingHorizonDays: 28,
     _declineMsg: null,    // Message shown on DECLINED step
     _declineOfferEstimate: false, // Whether to offer free estimate on decline screen
     // ── v1.12 RESCHEDULE MODE STATE ─────────────────────
@@ -952,7 +956,7 @@
     }
 
     const canPrev = calMonth > today.getMonth() || calYear > today.getFullYear();
-    const maxDate = new Date(); maxDate.setDate(maxDate.getDate() + 28);
+    const maxDate = new Date(); maxDate.setDate(maxDate.getDate() + state._bookingHorizonDays);
     const canNext = new Date(calYear, calMonth + 1, 1) <= maxDate;
 
     const furtherOutHtml = `<div style="text-align:center; margin-top:16px; padding-top:12px; border-top:1px solid ${THEME.colors.cardBorder};">${canNext ? `<button data-action="cal-next" style="display:inline-flex; align-items:center; gap:6px; padding:10px 24px; background:${THEME.colors.primaryLight}; border:1.5px solid ${THEME.colors.primaryBorder}; border-radius:8px; color:${THEME.colors.primary}; font-size:14px; font-weight:600; cursor:pointer; margin-bottom:12px; transition:all 0.2s ease;">View More Dates \u2192</button><br>` : ''}<button data-action="book-further-out" style="background:none; border:none; color:${THEME.colors.textMuted}; font-size:13px; cursor:pointer; padding:8px 0;">Need to book further out? Send us a request \u2192</button></div>`;
@@ -1792,7 +1796,11 @@
       // Capture after-hours status so the widget can show a note
       state._isAfterHours = result.isAfterHours || false;
       state._isSunday     = result.isSunday     || false;
-      console.log(`[ROX Booking] Session started: ${state.sessionId} (afterHours=${state._isAfterHours})`);
+      // v1.14: Capture the booking horizon from /start. Older servers
+      // that don't echo this field fall back to 28 (the historical
+      // hardcoded value), keeping the widget functional during rollouts.
+      state._bookingHorizonDays = result.bookingHorizonDays || 28;
+      console.log(`[ROX Booking] Session started: ${state.sessionId} (afterHours=${state._isAfterHours}, horizon=${state._bookingHorizonDays}d)`);
     } catch (err) { console.error('[ROX Booking] Failed to start session:', err.message); }
   }
 
@@ -1878,7 +1886,7 @@
       else if (state.data.serviceType === 'estimate') tag = 'sales';
       else if (state.data.systemAge === '10+') tag = 'sales tech';
       else if (state.data.systemAge === '0-2') tag = 'service tech';
-      const result = await apiGet('/availability', { sessionId: state.sessionId, tag: tag, days: '28' });
+      const result = await apiGet('/availability', { sessionId: state.sessionId, tag: tag, days: String(state._bookingHorizonDays) });
       state.availability = result;
       state.loading = false;
       if (result.availableDays && result.availableDays.length > 0) {
