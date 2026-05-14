@@ -40,7 +40,7 @@
     // ============================================================
     // HVAC ONLINE QUOTING WIZARD v3 — Standalone Production Build
     // ============================================================
-    const { useState, useEffect, useCallback } = React;
+    const { useState, useEffect, useCallback, useMemo } = React;
 
     const BOOKING_API = "https://rox-chat-production.up.railway.app/api/booking";
 
@@ -752,9 +752,34 @@
     }
 
     // ============================================================
+    // BOOK-DIRECT LEAD STEP — simplified name + phone + address
+    // ============================================================
+    function BookDirectLead({ data, onChange, onNext }) {
+      const fmtPh = (v) => { const d = v.replace(/\D/g, "").slice(0, 10); if (d.length <= 3) return d; if (d.length <= 6) return `(${d.slice(0,3)}) ${d.slice(3)}`; return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`; };
+      const phOk = (data.phone || "").replace(/\D/g, "").length === 10;
+      const nmOk = (data.fullName || "").trim().length > 1;
+      const adOk = (data.address || "").trim().length >= 5;
+      const canGo = phOk && nmOk && adOk;
+      return (<div className="sc" key="bdl"><Av /><h1 className="st">Schedule Your Free Home Visit</h1>
+        <p style={{ textAlign: "center", fontSize: 15, color: "#666", maxWidth: 420, margin: "0 auto 24px" }}>A comfort advisor will visit your home to verify the details and finalize your custom quote — no obligation.</p>
+        <div className="ir"><input className="inf" placeholder="Full Name*" value={data.fullName || ""} onChange={(e) => onChange({ ...data, fullName: e.target.value })} style={{ maxWidth: 360 }} /></div>
+        <div className="ir"><input className="inf" placeholder="Phone Number*" value={data.phone || ""} onChange={(e) => onChange({ ...data, phone: fmtPh(e.target.value) })} style={{ maxWidth: 360 }} /></div>
+        <div className="ir"><input className="inf" placeholder="Address*" value={data.address || ""} onChange={(e) => onChange({ ...data, address: e.target.value })} style={{ maxWidth: 360 }} /></div>
+        <div className="ir"><input className="inf" placeholder="Email (optional)" value={data.email || ""} onChange={(e) => onChange({ ...data, email: e.target.value })} style={{ maxWidth: 360 }} /></div>
+        <Ht text="We'll call to confirm details before your visit." />
+        <button className="bp" disabled={!canGo} onClick={onNext}>Find Available Times</button></div>);
+    }
+
+    // ============================================================
     // MAIN WIZARD
     // ============================================================
     function HVACQuoteWizard() {
+      // Detect ?book=true URL parameter for direct booking mode
+      const bookMode = useMemo(() => {
+        const params = new URLSearchParams(window.location.search);
+        return params.get("book") === "true";
+      }, []);
+
       const [step, setStep] = useState(0);
       const [fd, setFd] = useState({});
       const [tier, setTier] = useState(null);
@@ -764,18 +789,35 @@
       const [leadSent, setLeadSent] = useState(false);
       const [showHelp, setShowHelp] = useState(false);
 
-      const STEPS = ["lead", "address", "systemType", "homeSize", "unitLocation", "review", "loading", "results", "liveCalendar", "confirmBooking", "thankYou"];
+      const QUOTE_STEPS = ["lead", "address", "systemType", "homeSize", "unitLocation", "review", "loading", "results", "liveCalendar", "confirmBooking", "thankYou"];
+      const BOOK_STEPS = ["bookLead", "bookLoading", "liveCalendar", "confirmBooking", "thankYou"];
+      const STEPS = bookMode ? BOOK_STEPS : QUOTE_STEPS;
+
       const goN = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
       const goB = () => setStep((s) => Math.max(s - 1, 0));
       const reset = () => { setStep(0); setFd({}); setTier(null); setBk(null); setConf(null); setBkErr(null); setLeadSent(false); };
 
-      // Send lead capture when the user reaches the results page
+      // Send lead capture when the user reaches the results page (quote mode only)
       useEffect(() => {
         if (STEPS[step] === "results" && !leadSent) {
           setLeadSent(true);
           sendLeadCapture(fd);
         }
       }, [step, leadSent, fd]);
+
+      // Book-direct: auto-start booking session after lead step
+      const startBookDirect = useCallback(async () => {
+        goN(); // go to bookLoading
+        try {
+          const sess = await bookingPost("/start", { tenantId: CONFIG.tenantId });
+          await bookingPost("/update-session", { sessionId: sess.sessionId, updates: { serviceType: "estimate", systemAge: "10+", tags: ["Online Quote Booking", "Email Link"] }, step: "calendar" });
+          const phone = (fd.phone || "").replace(/\D/g, "");
+          let cf = false;
+          if (phone.length === 10) { try { const lu = await bookingPost("/lookup-customer", { sessionId: sess.sessionId, phone }); cf = lu.found || false; } catch {} }
+          setBk({ sessionId: sess.sessionId, customerFound: cf });
+          setStep(2); // liveCalendar in BOOK_STEPS
+        } catch (e) { setBkErr(e.message || "Failed to start booking"); setStep(2); }
+      }, [fd.phone]);
 
       const handleSch = useCallback(async (t) => {
         setTier(t); setBkErr(null);
@@ -812,14 +854,16 @@
           case "review": return <S7 data={fd} onChange={setFd} onNext={goN} />;
           case "loading": return <S8 onComplete={goN} />;
           case "results": return <S9 data={fd} onSchedule={handleSch} />;
+          case "bookLead": return <BookDirectLead data={fd} onChange={setFd} onNext={startBookDirect} />;
+          case "bookLoading": return <S8 onComplete={() => {}} />;
           case "liveCalendar": return <S10 data={fd} onChange={setFd} onNext={goN} bk={bk} />;
-          case "confirmBooking": return <S11 data={fd} selectedTier={tier} bk={bk} onConfirmed={(r) => { setConf(r); setStep(11); }} onError={(e) => setBkErr(e)} />;
+          case "confirmBooking": return <S11 data={fd} selectedTier={tier} bk={bk} onConfirmed={(r) => { setConf(r); goN(); }} onError={(e) => setBkErr(e)} />;
           case "thankYou": return <S12 data={fd} conf={conf} onReset={reset} />;
           default: return null;
         }
       };
 
-      const showBk = step > 0 && !["lead", "loading", "thankYou"].includes(STEPS[step]);
+      const showBk = step > 0 && !["lead", "loading", "thankYou", "bookLoading"].includes(STEPS[step]);
 
       return (<><style>{wzStyles}</style>
         <div className="wz">

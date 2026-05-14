@@ -14,7 +14,7 @@
 const express = require('express');
 const router = express.Router();
 
-function equipmentCard(tier, tierLabel, name, stage, monthly, seer2, hspf2, afue, scheduleUrl) {
+function equipmentCard(tier, tierLabel, name, stage, monthly, seer2, hspf2, afue, bookDirectUrl) {
   const borderColor = tier === 'best' ? '#F28C28' : '#E0E0E0';
   const labelColor = tier === 'best' ? '#F28C28' : '#666';
   const bgColor = tier === 'best' ? '#FFF8F0' : '#FFFFFF';
@@ -68,7 +68,8 @@ router.post('/', async (req, res) => {
     const resendKey = process.env.RESEND_API_KEY;
     const toEmail = process.env.QUOTE_LEAD_EMAIL_TO || 'office@gmail.com';
     const fromEmail = process.env.RESEND_FROM || 'ROX Quote Wizard <onboarding@resend.dev>';
-    const scheduleUrl = process.env.QUOTE_SCHEDULE_URL || 'https://rox-chat-production.up.railway.app/widget/quote-wizard.html';
+    const scheduleUrl = (process.env.QUOTE_SCHEDULE_URL || 'https://rox-chat-production.up.railway.app/widget/quote-wizard.html') + (process.env.QUOTE_SCHEDULE_URL ? '' : '?book=true');
+    const bookDirectUrl = 'https://rox-chat-production.up.railway.app/widget/quote-wizard.html?book=true';
 
     if (!resendKey) {
       console.warn('[quote-lead] RESEND_API_KEY not set. Lead logged but email not sent.');
@@ -152,9 +153,9 @@ router.post('/', async (req, res) => {
       '</table></div>' +
       '<div style="padding: 0 18px;">' +
       '<table style="width: 100%; border-collapse: separate; border-spacing: 0;" cellpadding="0" cellspacing="0"><tr>' +
-      equipmentCard('good', 'Good', lead.goodName, lead.goodStage || 'Single Stage', lead.goodMonthly, lead.goodSeer2, lead.goodHspf2, lead.goodAfue, scheduleUrl) +
-      equipmentCard('better', 'Better', lead.betterName, lead.betterStage || '2 Stage', lead.betterMonthly, lead.betterSeer2, lead.betterHspf2, lead.betterAfue, scheduleUrl) +
-      equipmentCard('best', 'Best', lead.bestName, lead.bestStage || 'Inverter', lead.bestMonthly, lead.bestSeer2, lead.bestHspf2, lead.bestAfue, scheduleUrl) +
+      equipmentCard('good', 'Good', lead.goodName, lead.goodStage || 'Single Stage', lead.goodMonthly, lead.goodSeer2, lead.goodHspf2, lead.goodAfue, bookDirectUrl) +
+      equipmentCard('better', 'Better', lead.betterName, lead.betterStage || '2 Stage', lead.betterMonthly, lead.betterSeer2, lead.betterHspf2, lead.betterAfue, bookDirectUrl) +
+      equipmentCard('best', 'Best', lead.bestName, lead.bestStage || 'Inverter', lead.bestMonthly, lead.bestSeer2, lead.bestHspf2, lead.bestAfue, bookDirectUrl) +
       '</tr></table></div>' +
       '<div style="text-align: center; padding: 20px 24px 8px;">' +
       '<p style="font-size: 12px; color: #999; margin: 0;">*Monthly prices based on approved financing. Final pricing confirmed during your free home visit.</p>' +
