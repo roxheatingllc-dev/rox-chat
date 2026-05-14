@@ -136,10 +136,9 @@ router.post('/', async (req, res) => {
     const customerSubject = firstName + ', here are your HVAC pricing options from ROX Heating & Air';
 
     const customerHtml = '<div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; background: #ffffff;">' +
-      '<div style="background: #1A1A1A; padding: 24px 32px; text-align: center; border-radius: 8px 8px 0 0;">' +
-      '<img src="https://rox-chat-production.up.railway.app/widget/rox-logo.png" alt="ROX Heating & Air" style="height: 40px; margin-bottom: 8px;" onerror="this.style.display=\'none\'" />' +
-      '<div style="color: white; font-size: 20px; font-weight: 700;">ROX Heating & Air</div>' +
-      '<div style="color: #999; font-size: 13px;">(720) 468-0689 &nbsp;|&nbsp; roxheating.com</div>' +
+      '<div style="background: #ffffff; padding: 24px 32px; text-align: center; border-radius: 8px 8px 0 0; border-bottom: 2px solid #F28C28;">' +
+      '<img src="https://www.roxheating.com/wp-content/uploads/2020/08/ROX-PNG-e1606349402873.png" alt="ROX Heating & Air" style="height: 50px; margin-bottom: 8px;" />' +
+      '<div style="color: #666; font-size: 13px;">(720) 468-0689 &nbsp;|&nbsp; roxheating.com</div>' +
       '</div>' +
       '<div style="padding: 32px 24px 16px; text-align: center;">' +
       '<h1 style="font-size: 24px; color: #222; margin: 0 0 8px;">Your Personalized Quote</h1>' +
