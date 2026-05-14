@@ -1,31 +1,26 @@
 /**
- * Quote Lead Capture Route (v2 - SendGrid HTTP API)
- * 
- * Sends lead notification emails when someone views pricing on the quoting wizard.
- * Uses SendGrid HTTP API instead of SMTP — works on Railway and all cloud hosts.
+ * Quote Lead Capture Route (Resend HTTP API)
  * 
  * SETUP:
- * 1. Sign up at https://sendgrid.com (free = 100 emails/day)
- * 2. Create an API key: Settings → API Keys → Create API Key (Full Access)
- * 3. Verify a sender: Settings → Sender Authentication → Single Sender Verification
- *    (verify office@gmail.com or whatever "from" address you want)
- * 4. Add environment variables to Railway:
- *      SENDGRID_API_KEY=SG.xxxxxxxxx
+ * 1. Sign up free at https://resend.com
+ * 2. Get your API key from the Resend Dashboard
+ * 3. Add to Railway:
+ *      RESEND_API_KEY=re_xxxxxxxxx
  *      QUOTE_LEAD_EMAIL_TO=office@gmail.com
- *      QUOTE_LEAD_EMAIL_FROM=office@gmail.com
- * 
- * No npm packages needed — uses built-in fetch.
+ *      RESEND_FROM=ROX Quote Wizard <noreply@roxheating.com>
+ *
+ * NOTE: To use a custom from address (like noreply@roxheating.com),
+ * you must verify your domain in Resend: Settings → Domains → Add Domain.
+ * Until then, use: onboarding@resend.dev (only sends to your Resend signup email)
  */
 
 const express = require('express');
 const router = express.Router();
 
-// POST /api/quote-lead
 router.post('/', async (req, res) => {
   try {
     const lead = req.body;
 
-    // Always log the lead (backup in case email fails)
     console.log('[quote-lead] New lead received:', JSON.stringify({
       name: lead.name,
       phone: lead.phone,
@@ -36,12 +31,12 @@ router.post('/', async (req, res) => {
       timestamp: lead.timestamp,
     }));
 
-    const sgKey = process.env.SENDGRID_API_KEY;
+    const resendKey = process.env.RESEND_API_KEY;
     const toEmail = process.env.QUOTE_LEAD_EMAIL_TO || 'office@gmail.com';
-    const fromEmail = process.env.QUOTE_LEAD_EMAIL_FROM || 'office@gmail.com';
+    const fromEmail = process.env.RESEND_FROM || 'ROX Quote Wizard <onboarding@resend.dev>';
 
-    if (!sgKey) {
-      console.warn('[quote-lead] SENDGRID_API_KEY not set. Lead logged but email not sent.');
+    if (!resendKey) {
+      console.warn('[quote-lead] RESEND_API_KEY not set. Lead logged but email not sent.');
       return res.json({ success: true, emailSent: false });
     }
 
@@ -88,27 +83,27 @@ router.post('/', async (req, res) => {
       'Source: ROX Online Quoting Wizard</p>' +
       '</div></div>';
 
-    // Send via SendGrid HTTP API (no SMTP needed — works on Railway)
-    const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+    const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + sgKey,
+        'Authorization': 'Bearer ' + resendKey,
       },
       body: JSON.stringify({
-        personalizations: [{ to: [{ email: toEmail }] }],
-        from: { email: fromEmail, name: 'ROX Quote Wizard' },
+        from: fromEmail,
+        to: [toEmail],
         subject: subject,
-        content: [{ type: 'text/html', value: html }],
+        html: html,
       }),
     });
 
-    if (response.status === 202) {
-      console.log('[quote-lead] Email sent via SendGrid to ' + toEmail + ' for lead: ' + lead.name);
+    if (response.ok) {
+      const data = await response.json();
+      console.log('[quote-lead] Email sent via Resend to ' + toEmail + ' for lead: ' + lead.name + ' (id: ' + data.id + ')');
       res.json({ success: true, emailSent: true });
     } else {
       const errBody = await response.text();
-      console.error('[quote-lead] SendGrid error (' + response.status + '): ' + errBody);
+      console.error('[quote-lead] Resend error (' + response.status + '): ' + errBody);
       res.json({ success: true, emailSent: false });
     }
   } catch (error) {
