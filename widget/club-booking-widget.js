@@ -1,5 +1,18 @@
 /**
- * ROX Club Booking Widget v1.0.9
+ * ROX Club Booking Widget v1.0.10
+ *   - v1.0.10 (2026-05-18): Optional campaign cutoff. The widget no longer
+ *     assumes a fixed cutoff date is always present — when the server's
+ *     /start response returns campaign.cutoffDate === null (the new
+ *     default for non-time-limited campaigns, per rox-ai-answering
+ *     v2.19.12), three text strings adapt:
+ *       - calendar muted line: "Pick an available date below:"
+ *                              (was: "Available dates through <date>:")
+ *       - empty-calendar warning: references "the current booking window"
+ *                              (was: "before our cutoff date")
+ *       - late-callback heading: "Need help scheduling?"
+ *                              (was: "Want a date after <date>?")
+ *     When a future campaign sets cutoffDate to a YYYY-MM-DD value, all
+ *     three places restore the date-specific phrasing automatically.
  *   - v1.0.9 (2026-04-28): TCPA SMS/email consent checkbox added on the
  *     Confirm step. Required to submit alongside the existing weather
  *     acknowledgement. The "Book my tune-up" button now stays disabled
@@ -957,7 +970,9 @@
         ${weatherBanner}
         ${renderError()}
         <p class="rcb-muted" style="margin-bottom: 12px;">
-          Available dates through ${escapeHtml(cmp.cutoffDate || 'the cutoff date')}:
+          ${cmp.cutoffDate
+            ? `Available dates through ${escapeHtml(cmp.cutoffDate)}:`
+            : 'Pick an available date below:'}
         </p>
         <div class="rcb-cal-loading" role="status" aria-live="polite">
           <div class="rcb-loading"></div>
@@ -973,8 +988,11 @@
         ${weatherBanner}
         ${renderError()}
         <div class="rcb-warn">
-          We don't have any open spots before our cutoff date. You can request an
-          office callback below and we'll find a time that works.
+          ${cmp.cutoffDate
+            ? `We don't have any open spots before our cutoff date. You can request an
+              office callback below and we'll find a time that works.`
+            : `We don't have any open spots in the current booking window. You can request an
+              office callback below and we'll find a time that works.`}
         </div>
         ${renderLateCallbackPrompt()}
       `;
@@ -1066,7 +1084,9 @@
       ${weatherBanner}
       ${renderError()}
       <p class="rcb-muted" style="margin-bottom: 12px;">
-        Available dates through ${escapeHtml(cmp.cutoffDate || 'the cutoff date')}:
+        ${cmp.cutoffDate
+          ? `Available dates through ${escapeHtml(cmp.cutoffDate)}:`
+          : 'Pick an available date below:'}
       </p>
       ${calNav}
       <div class="rcb-day-list">${dayButtons}</div>
@@ -1176,7 +1196,9 @@
   function renderLateCallback() {
     const cmp = state.campaign || {};
     return `
-      <h1 class="rcb-h1">Want a date after ${escapeHtml(cmp.cutoffDate || 'May 31')}?</h1>
+      <h1 class="rcb-h1">${cmp.cutoffDate
+        ? `Want a date after ${escapeHtml(cmp.cutoffDate)}?`
+        : 'Need help scheduling?'}</h1>
       <p class="rcb-p">
         No problem. Leave a quick note (optional) and someone from our office
         will call you back to find a time that works.
