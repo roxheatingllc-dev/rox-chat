@@ -42,11 +42,9 @@
  *           would be wrong). The local SERVICE_AREA_ZIPS set is now used
  *           ONLY by that message-flow gate; the authoritative area check
  *           is the server's /check-area.
- *   - CACHE-BUST: embed bumped to ?v=12 (this file's header previously
- *           referenced ?v=11; the project's tracked live value was ?v=10 --
- *           bumping to ?v=12 guarantees a fresh fetch regardless of which
- *           was actually live). Jason must update the WordPress embed to
- *           ?v=12.
+ *   - CACHE-BUST: embed bumped to ?v=15 (the live WordPress embed was at
+ *           ?v=14). Jason must update the WordPress embed to ?v=15 so
+ *           customers fetch this v1.15 build instead of the cached v=14.
  *
  * v1.13 Changes (2026-05-04):
  *   - ADD: Short-link URL support. The dashboard's reschedule SMS now
