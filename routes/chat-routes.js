@@ -152,6 +152,12 @@ const STATE_QUICK_REPLIES = {
     { label: '✅ Yes, that\'s correct', value: 'Yes' },
     { label: '✏️ Enter different zip', value: 'No' }
   ],
+  // Out-of-area referral offer (GoodFellas) — the engine returns these inline;
+  // this is the fallback mapping, matching the engine's QR.referralOffer.
+  referral_offer: [
+    { label: '👍 Yes, please', value: 'Yes' },
+    { label: '❌ No, thanks', value: 'No' }
+  ],
   // Priority Comfort Club
   pcc_ask: [
     { label: '⭐ Yes, I\'m a member', value: 'Yes' },
