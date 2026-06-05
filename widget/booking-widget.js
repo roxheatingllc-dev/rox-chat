@@ -1,5 +1,52 @@
 /**
- * ROX Booking Widget v1.14 - Per-Widget Booking Horizon
+ * ROX Booking Widget v1.15 - Out-of-Area Referral + City-Save
+ *
+ * v1.15 Changes (2026-06-05):
+ *   - ADD: Out-of-area referral + city-save on the NEW-customer ADDRESS
+ *           step (cross-channel parity with voice v2.22.71 and chat
+ *           v2.22.73; booking was the last channel without it).
+ *   - The widget now calls POST /api/booking/check-area when a new
+ *           customer continues past the Service Address step. The engine
+ *           owns the decision via the shared config/service-areas.js +
+ *           config/referral-partner.js (single source of truth). Three
+ *           outcomes the widget renders:
+ *             1. inArea        -> proceed to Contact Info as before.
+ *             2. cityServiced  -> "city-save": the typed city IS serviced
+ *                                 but the zip isn't recognized for it (a
+ *                                 mistyped zip). We DO NOT refer -- we
+ *                                 trust the city, keep the customer on the
+ *                                 Address step, and ask them to correct the
+ *                                 zip. (Matches voice/chat.)
+ *             3. confirmed OOA -> HARD GATE. Booking stops and the new
+ *                                 REFERRAL screen offers GoodFellas Heating
+ *                                 & Cooling. Yes shares the number; No is a
+ *                                 polite close.
+ *   - ADD: REFERRAL step + renderReferral() + checkServiceAreaOrRefer() +
+ *           titleCaseCity() + handleAction cases referral-yes /
+ *           referral-no / referral-fix-zip. REFERRAL is reached via
+ *           goToStep() and is NOT part of any STEP_FLOW (like DECLINED /
+ *           WARRANTY_HANDOFF).
+ *   - CHANGE: validateStep() ADDRESS case no longer does the old local-set
+ *           "click Continue again to proceed anyway" SOFT gate. The
+ *           service-area decision now lives in checkServiceAreaOrRefer()
+ *           (a /check-area server call), so a confirmed-out-of-area new
+ *           customer is HARD-stopped + referred instead of booked anyway.
+ *   - FIX: renderAddress() now displays state.error (it had no error slot,
+ *           so out-of-area feedback was previously invisible on this step).
+ *   - FAIL-OPEN: any /check-area network/engine error lets the customer
+ *           proceed (never block a real booking on a transient bug) --
+ *           mirrors the engine's own fail-open contract.
+ *   - SCOPE: the message-flow zip gate (CONTACT_INFO) is intentionally
+ *           UNCHANGED -- message flow forwards out-of-area leads to the
+ *           office with an "OUT OF SERVICE AREA" tag (a referral there
+ *           would be wrong). The local SERVICE_AREA_ZIPS set is now used
+ *           ONLY by that message-flow gate; the authoritative area check
+ *           is the server's /check-area.
+ *   - CACHE-BUST: embed bumped to ?v=12 (this file's header previously
+ *           referenced ?v=11; the project's tracked live value was ?v=10 --
+ *           bumping to ?v=12 guarantees a fresh fetch regardless of which
+ *           was actually live). Jason must update the WordPress embed to
+ *           ?v=12.
  *
  * v1.13 Changes (2026-05-04):
  *   - ADD: Short-link URL support. The dashboard's reschedule SMS now
@@ -114,7 +161,7 @@
  *   };
  * </script>
  * <div id="rox-booking"></div>
- * <script src="https://rox-chat-production.up.railway.app/widget/booking-widget.js?v=11"></script>
+ * <script src="https://rox-chat-production.up.railway.app/widget/booking-widget.js?v=12"></script>
  * 
  * v1.4 Changes:
  *   - FIX: Push name+phone to server after QUICK_INFO so abandon emails have contact info
@@ -203,6 +250,7 @@
     ROX_INSTALLED: 'rox_installed',
     WARRANTY_HANDOFF: 'warranty_handoff',
     DECLINED: 'declined',          // Shown when a service type is not supported
+    REFERRAL: 'referral',          // v1.15 - out-of-area referral (GoodFellas). Reached via goToStep, not in any STEP_FLOW.
     // ── v1.12 RESCHEDULE MODE STEPS ─────────────────────
     // These four are NEVER part of any STEP_FLOW. They are only reached
     // via the URL ?token=... entry path in init(). The progress bar is
@@ -298,6 +346,12 @@
     _bookingHorizonDays: 28,
     _declineMsg: null,    // Message shown on DECLINED step
     _declineOfferEstimate: false, // Whether to offer free estimate on decline screen
+    // v1.15 - out-of-area referral state. _referral holds the text the
+    // engine returned from /check-area ({ enabled, offerText, numberText });
+    // _referralStage drives the REFERRAL screen ('offer' -> 'shared' | 'declined').
+    _referral: null,
+    _referralStage: null,
+    _areaChecking: false, // re-entry guard while POST /check-area is in flight
     // ── v1.12 RESCHEDULE MODE STATE ─────────────────────
     // All reschedule-only state is _reschedule*-prefixed so it's clear
     // at a glance what belongs to the booking flow vs the reschedule
@@ -672,6 +726,7 @@
       case STEPS.ROX_INSTALLED: return renderRoxInstalled();
       case STEPS.WARRANTY_HANDOFF: return renderWarrantyHandoff();
       case STEPS.DECLINED: return renderDeclined();
+      case STEPS.REFERRAL: return renderReferral();
       case STEPS.CALENDAR: return renderCalendar();
       case STEPS.DESCRIBE_ISSUE: return renderDescribeIssue();
       case STEPS.MESSAGE: return renderMessage();
@@ -806,6 +861,56 @@
       + `<p style="color:${C.textSecondary}">${escapeHtml(msg)}</p>`
       + offerHtml
       + `</div></div>`;
+  }
+
+  // ============================================
+  // REFERRAL STEP (v1.15) - out-of-area hard gate
+  // ============================================
+  // Shown only when /check-area returns a CONFIRMED out-of-area zip (zip
+  // not serviced AND typed city not serviced). The booking flow is
+  // hard-stopped here. We offer the partner's phone number (GoodFellas),
+  // and share it ONLY after the customer taps Yes -- the engine's
+  // offerText never contains the number; numberText does.
+  //
+  // Three stages via state._referralStage:
+  //   'offer'    -> offer line + Yes / No + a "fix my zip" escape hatch
+  //   'shared'   -> number line + polite close
+  //   'declined' -> polite close
+  function renderReferral() {
+    const C = THEME.colors;
+    const ref = state._referral || {};
+    const stage = state._referralStage || 'offer';
+
+    if (stage === 'shared') {
+      const numberText = ref.numberText || ('Please call ' + CONFIG.companyPhone + ' and we can point you in the right direction.');
+      return `<div class="rxb-card"><div class="rxb-success">`
+        + `<div class="rxb-success-icon" style="font-size:30px;">\uD83D\uDCDE</div>`
+        + `<h3 style="color:${C.text}">Here You Go</h3>`
+        + `<p style="color:${C.textSecondary};line-height:1.6">${escapeHtml(numberText)}</p>`
+        + `<p style="margin-top:18px;font-size:13px;color:${C.textMuted}">Thanks for thinking of ${escapeHtml(CONFIG.companyName)} \u2014 take care!</p>`
+        + `</div></div>`;
+    }
+
+    if (stage === 'declined') {
+      return `<div class="rxb-card"><div class="rxb-success">`
+        + `<div class="rxb-success-icon" style="font-size:30px;">\uD83D\uDC4B</div>`
+        + `<h3 style="color:${C.text}">No Problem</h3>`
+        + `<p style="color:${C.textSecondary};line-height:1.6">Thanks for thinking of ${escapeHtml(CONFIG.companyName)}. If anything changes, we're always here.</p>`
+        + `<p style="margin-top:18px;font-size:13px;color:${C.textMuted}">Questions? Call us at <strong>${CONFIG.companyPhone}</strong></p>`
+        + `</div></div>`;
+    }
+
+    // stage === 'offer'
+    const offerText = ref.offerText || 'That address is outside our service area.';
+    return `<div class="rxb-card">`
+      + `<div class="rxb-card-title">Outside Our Service Area</div>`
+      + `<div class="rxb-card-subtitle" style="margin-bottom:20px">${escapeHtml(offerText)}</div>`
+      + `<div class="rxb-options">`
+      +   `<button class="rxb-option-btn" data-action="referral-yes"><div class="rxb-option-icon">\uD83D\uDC4D</div><div><div class="rxb-option-label">Yes, share their number</div></div></button>`
+      +   `<button class="rxb-option-btn" data-action="referral-no"><div class="rxb-option-icon">\u274C</div><div><div class="rxb-option-label">No thanks</div></div></button>`
+      + `</div>`
+      + `<div style="margin-top:16px;text-align:center"><button data-action="referral-fix-zip" style="background:none;border:none;color:${C.primary};font-size:13px;cursor:pointer;text-decoration:underline">\u2190 Wrong zip? Let me fix it</button></div>`
+      + `</div>`;
   }
 
   // Called when customer taps Yes / No / Not Sure on the ROX installed step.
@@ -970,7 +1075,11 @@
 
   function renderAddress() {
     const a = state.data.address;
-    return `<div class="rxb-card"><div class="rxb-card-title">Service Address</div><div class="rxb-card-subtitle">Where should we send the technician?</div><div class="rxb-field"><label class="rxb-label">Street Address</label><div class="rxb-addr-wrap"><input type="text" class="rxb-input" id="rxb-street" placeholder="Start typing your address..." value="${escapeHtml(a.street)}" autocomplete="off"></div></div><div class="rxb-input-row"><div class="rxb-field"><label class="rxb-label">City</label><input type="text" class="rxb-input" id="rxb-city" placeholder="Denver" value="${escapeHtml(a.city)}" autocomplete="address-level2"></div><div class="rxb-field"><label class="rxb-label">Zip Code</label><input type="text" class="rxb-input" id="rxb-zip" placeholder="80202" value="${escapeHtml(a.zip)}" maxlength="5" autocomplete="postal-code"></div></div>${renderNav(true, true)}</div>`;
+    // v1.15 - surface state.error here (e.g. the city-save "please re-check
+    // your zip" message). renderAddress previously had no error slot, so
+    // out-of-area feedback on this step was invisible.
+    const errorHtml = state.error ? `<div class="rxb-error">${state.error}</div>` : '';
+    return `<div class="rxb-card"><div class="rxb-card-title">Service Address</div><div class="rxb-card-subtitle">Where should we send the technician?</div>${errorHtml}<div class="rxb-field"><label class="rxb-label">Street Address</label><div class="rxb-addr-wrap"><input type="text" class="rxb-input" id="rxb-street" placeholder="Start typing your address..." value="${escapeHtml(a.street)}" autocomplete="off"></div></div><div class="rxb-input-row"><div class="rxb-field"><label class="rxb-label">City</label><input type="text" class="rxb-input" id="rxb-city" placeholder="Denver" value="${escapeHtml(a.city)}" autocomplete="address-level2"></div><div class="rxb-field"><label class="rxb-label">Zip Code</label><input type="text" class="rxb-input" id="rxb-zip" placeholder="80202" value="${escapeHtml(a.zip)}" maxlength="5" autocomplete="postal-code"></div></div>${renderNav(true, true)}</div>`;
   }
 
   function renderContactInfo() {
@@ -1562,6 +1671,25 @@
         state.availability = null;
         goToStep(STEPS.SERVICE_TYPE);
         break;
+      // ── v1.15 OUT-OF-AREA REFERRAL ACTIONS ──────────────────────────
+      case 'referral-yes':
+        // Share the partner number (engine-provided numberText). Booking is
+        // already hard-stopped; this is a terminal, friendly close.
+        state._referralStage = 'shared';
+        render();
+        break;
+      case 'referral-no':
+        state._referralStage = 'declined';
+        render();
+        break;
+      case 'referral-fix-zip':
+        // Customer realized the zip was wrong — let them correct it.
+        state._referral = null;
+        state._referralStage = null;
+        state.data.address.zip = '';
+        state.error = null;
+        goToStep(STEPS.ADDRESS);
+        break;
       case 'confirm-booking': await confirmBooking(); break;
       case 'submit-message': await submitMessage(); break;
       case 'select-pcc':
@@ -1684,6 +1812,17 @@
       }
     }
 
+    // v1.15 — Out-of-area referral + city-save gate on the new-customer
+    // Service Address step. The engine owns the decision (shared service
+    // areas + referral partner). checkServiceAreaOrRefer() returns false
+    // when it has taken over the flow (re-collecting a zip for a city-save,
+    // or showing the REFERRAL screen), in which case we stop here and do
+    // NOT advance to the next step.
+    if (state.currentStep === STEPS.ADDRESS) {
+      const proceed = await checkServiceAreaOrRefer();
+      if (!proceed) return;
+    }
+
     if (idx < flow.length - 1) {
       const nextStep = flow[idx + 1];
       state.currentStep = nextStep;
@@ -1749,14 +1888,12 @@
       case STEPS.ADDRESS:
         if (!state.data.address.street || !state.data.address.city || !state.data.address.zip) { state.error = 'Please fill in your complete address.'; render(); return false; }
         if (state.data.address.zip.length < 5) { state.error = 'Please enter a valid 5-digit zip code.'; render(); return false; }
-        // Zip confirmation — first time out-of-area, warn and let them fix
-        if (!state.data._zipConfirmed && !SERVICE_AREA_ZIPS.has(state.data.address.zip)) {
-          state._zipWarning = true;
-          state.data._zipConfirmed = true; // Let them proceed on second attempt
-          state.error = `We don't currently service the ${state.data.address.zip} area. If this zip code is correct, click Continue again. Otherwise, please update it.`;
-          render(); return false;
-        }
-        state._zipWarning = false;
+        // v1.15 - the service-area decision (in area / city-save / refer)
+        // now happens in checkServiceAreaOrRefer() (a /check-area server
+        // call) from goNext(), AFTER this validation passes. The old
+        // local-set "click Continue again to proceed anyway" soft gate was
+        // removed so a confirmed out-of-area new customer is hard-stopped
+        // and referred instead of booked anyway.
         return true;
       case STEPS.CONTACT_INFO:
         // v1.10 — same first + last validation as QUICK_INFO. CONTACT_INFO
@@ -1979,6 +2116,90 @@
       state.error = 'Something went wrong. Please call ' + CONFIG.companyPhone;
       render();
     }
+  }
+
+  // ============================================
+  // SERVICE-AREA CHECK + REFERRAL (v1.15)
+  // ============================================
+  // Called from goNext() when a new customer continues past the Service
+  // Address step. Delegates the in-area / city-save / confirmed-out-of-area
+  // decision to the engine (POST /check-area -> shared config/service-areas.js
+  // + config/referral-partner.js, the single source of truth across voice,
+  // chat, and booking).
+  //
+  // Returns true  -> caller should advance to the next step (zip is serviced).
+  // Returns false -> this function has taken over the flow; caller must stop:
+  //                    - city-save -> stays on ADDRESS, asks to fix the zip
+  //                    - confirmed out of area -> REFERRAL screen (or, if the
+  //                      partner is disabled, a polite DECLINED close).
+  //
+  // Fail-open: any network/engine error proceeds with the booking (returns
+  // true) so a real customer is never blocked by a transient bug -- mirrors
+  // the engine's own fail-open contract on /check-area.
+  async function checkServiceAreaOrRefer() {
+    if (state._areaChecking) return false; // re-entry guard (double-click on Continue)
+    const zip = (state.data.address.zip || '').trim();
+    const city = (state.data.address.city || '').trim();
+
+    state._areaChecking = true;
+    state.error = null;
+
+    let result;
+    try {
+      result = await api('POST', '/check-area', {
+        sessionId: state.sessionId,
+        zip: zip,
+        city: city
+      });
+    } catch (err) {
+      // Fail open -- never block a real booking on a transient error.
+      console.warn('[ROX Booking] check-area failed (proceeding):', err.message);
+      state._areaChecking = false;
+      return true;
+    }
+
+    state._areaChecking = false;
+
+    // 1. In service area -> proceed.
+    if (result.inArea) {
+      return true;
+    }
+
+    // 2. City-save -> the typed city IS serviced but the zip isn't recognized
+    //    for it (mistyped zip). Trust the city, keep them on ADDRESS, and ask
+    //    them to correct the zip. No referral. Clear the bad zip so the
+    //    re-entry is unambiguous.
+    if (result.cityServiced) {
+      const cityLabel = titleCaseCity(result.matchedCity || city);
+      state.data.address.zip = '';
+      state.error = `Great news \u2014 we do service ${cityLabel}! That zip code doesn't look right for ${cityLabel} though. Could you double-check and re-enter your zip?`;
+      render();
+      return false; // stay on ADDRESS
+    }
+
+    // 3. Confirmed out of area -> referral (or a polite close if disabled).
+    const ref = (result.referral && result.referral.enabled) ? result.referral : null;
+    if (ref) {
+      state._referral = ref;          // { enabled, offerText, numberText }
+      state._referralStage = 'offer';
+      goToStep(STEPS.REFERRAL);
+    } else {
+      // Partner disabled -- polite out-of-area close.
+      state._declineMsg = "That address is outside our current service area. We're sorry we can't help this time!";
+      state._declineOfferEstimate = false;
+      goToStep(STEPS.DECLINED);
+    }
+    return false;
+  }
+
+  // Title-case a serviced-city name from the engine ("parker" -> "Parker",
+  // "cherry hills village" -> "Cherry Hills Village") for friendly display.
+  function titleCaseCity(s) {
+    return String(s || '')
+      .split(/\s+/)
+      .map(function (w) { return w ? w.charAt(0).toUpperCase() + w.slice(1) : w; })
+      .join(' ')
+      .trim();
   }
 
   // ============================================
