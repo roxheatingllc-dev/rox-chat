@@ -33,7 +33,7 @@ function equipmentCard(tier, tierLabel, name, stage, monthly, seer2, hspf2, afue
     '<tr><td style="padding: 6px 0; font-size: 12px; color: #888; text-align: left; font-weight: 600;">HSPF2</td><td style="padding: 6px 0; font-size: 13px; color: #333; text-align: right;">Up to ' + (hspf2 || '—') + '</td></tr>' +
     '<tr><td style="padding: 6px 0; font-size: 12px; color: #888; text-align: left; font-weight: 600;">AFUE</td><td style="padding: 6px 0; font-size: 13px; color: #333; text-align: right;">Up to ' + (afue || '—') + '%</td></tr>' +
     '</table>' +
-    '<a href="' + scheduleUrl + '" style="display: block; background: #F28C28; color: white; text-decoration: none; padding: 12px 16px; border-radius: 8px; font-size: 14px; font-weight: 700;">Schedule a Home Visit</a>' +
+    '<a href="' + bookDirectUrl + '" style="display: block; background: #F28C28; color: white; text-decoration: none; padding: 12px 16px; border-radius: 8px; font-size: 14px; font-weight: 700;">Schedule a Home Visit</a>' +
     '<div style="font-size: 11px; color: #999; margin-top: 8px;">*We can customize during the visit</div>' +
     '</div></td>';
 }
