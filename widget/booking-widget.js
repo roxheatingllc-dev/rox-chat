@@ -1,5 +1,28 @@
 /**
- * ROX Booking Widget v1.15 - Out-of-Area Referral + City-Save
+ * ROX Booking Widget v1.16 - Server-Authoritative Tech Routing + Step Sync
+ *
+ * v1.16 Changes (2026-06-21):
+ *   - FIX: Booking widget no longer computes the tech tag client-side and
+ *           passes it as ?tag= to /availability. That client routing sent
+ *           'service tech' for 0-2yr repairs — a tag that does NOT exist in
+ *           config/tech-tags.js (the v2.21.10 SERVER fix was never mirrored
+ *           into the widget), so those bookings silently pulled availability
+ *           from ALL bookable employees instead of the service-tech filter.
+ *           It also bypassed the heat-pump-router overrides (10+ AC/Furnace
+ *           opportunity-call -> sales tech; heat-pump tag -> heat pump tech)
+ *           that the server computes. loadAvailability() now pushes the
+ *           routing-relevant fields to the session and calls /availability
+ *           WITHOUT a tag, letting the server's determineTechTag (single
+ *           source of truth, shared with voice/chat) decide. Collapses the
+ *           'Tech tag selection' cross-channel danger-zone duplication.
+ *   - FIX: goToStep() now fire-and-forget syncs the TRUE current step to the
+ *           server so abandoned-booking emails report where the customer
+ *           actually stopped. Previously only a few steps synced their step,
+ *           so every calendar/contact/confirm abandon was mislabeled as
+ *           'system_age' (the last step that happened to sync). Guarded on
+ *           sessionId so it never fires in reschedule mode or before /start.
+ *   - CACHE-BUST: embed bumped to ?v=16. Jason must update the WordPress
+ *           embed to ?v=16 so customers fetch this build.
  *
  * v1.15 Changes (2026-06-05):
  *   - ADD: Out-of-area referral + city-save on the NEW-customer ADDRESS
@@ -1756,7 +1779,22 @@
   // ============================================
   // NAVIGATION
   // ============================================
-  function goToStep(step) { state.currentStep = step; state.error = null; render(); }
+  // v1.16 — fire-and-forget step sync. Records the TRUE current step on the
+  // server (session.step) so abandoned-booking emails report where the
+  // customer actually stopped. No `updates` payload — this only touches the
+  // step. Guarded by the caller on sessionId so it never fires in reschedule
+  // mode (no booking session) or before /start completes.
+  function syncStep() {
+    api('POST', '/update-session', { sessionId: state.sessionId, step: state.currentStep })
+      .catch(() => { /* non-critical: step tracking only */ });
+  }
+
+  function goToStep(step) {
+    state.currentStep = step;
+    state.error = null;
+    if (state.sessionId && !state._rescheduleMode) syncStep();
+    render();
+  }
 
   function goBack() {
     const flow = STEP_FLOW[state.path || 'new'];
@@ -2014,14 +2052,22 @@
     // Fetch weather in background (non-blocking)
     if (!state._weather) loadWeather();
     try {
-      let tag = 'service tech 3-10'; // Default for 3-10 year repairs
-      if (state.data.serviceType === 'maintenance') {
-        tag = state.data.systemAge === '10+' ? 'sales tech' : 'maintenance tech';
-      }
-      else if (state.data.serviceType === 'estimate') tag = 'sales';
-      else if (state.data.systemAge === '10+') tag = 'sales tech';
-      else if (state.data.systemAge === '0-2') tag = 'service tech';
-      const result = await apiGet('/availability', { sessionId: state.sessionId, tag: tag, days: String(state._bookingHorizonDays) });
+      // v1.16 — Server-authoritative tech routing. The widget no longer
+      // computes the tag client-side. We push the routing-relevant fields to
+      // the session, then call /availability WITHOUT a ?tag so the server's
+      // determineTechTag decides (single source of truth, shared with
+      // voice/chat). This fixes the 0-2yr 'service tech' invalid-tag bug
+      // (which silently pulled ALL employees) and activates the
+      // heat-pump-router overrides (10+ AC/Furnace opportunity-call → sales
+      // tech; heat-pump tag → heat pump tech) on the booking widget.
+      await updateSession({
+        serviceType:  state.data.serviceType,
+        customerType: state.data.customerType,
+        systemAge:    state.data.systemAge,
+        pccType:      state.data.pccType || null,
+        isPccMember:  state.data.isPccMember || false
+      });
+      const result = await apiGet('/availability', { sessionId: state.sessionId, days: String(state._bookingHorizonDays) });
       state.availability = result;
       state.loading = false;
       if (result.availableDays && result.availableDays.length > 0) {
@@ -2635,3 +2681,4 @@
   if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init); }
   else { init(); }
 })();
+
