@@ -4,6 +4,8 @@
  * Handles rate limiting, validation, and CORS.
  * 
  * v1.1.0 — Added /abandon proxy for abandonment notifications
+ * v1.2.0 — Added /check-area proxy (service-area + GoodFellas referral
+ *          decision; the engine owns the logic). v2.22.74 cross-channel parity.
  */
 
 const express = require('express');
@@ -150,6 +152,29 @@ router.post('/warranty-check', rateLimit, async (req, res) => {
   } catch (err) {
     console.error('[BookingRoutes] Warranty-check error:', err.message);
     res.status(500).json({ error: 'Failed to process warranty check' });
+  }
+});
+
+// ========================================
+// POST /api/booking/check-area — Service-area + referral decision (proxy)
+// Pure check (zip + city in, decision out). The engine owns the logic via
+// config/service-areas.js + config/referral-partner.js. v2.22.74.
+// ========================================
+router.post('/check-area', rateLimit, async (req, res) => {
+  try {
+    const result = await bookingAdapter.request('POST', '/check-area', req.body);
+    res.json(result);
+  } catch (err) {
+    console.error('[BookingRoutes] Check-area error:', err.message);
+    // Fail open on a proxy/engine hiccup so a real customer is never blocked.
+    // The widget treats inArea:true as "proceed".
+    res.status(200).json({
+      inArea: true,
+      cityServiced: false,
+      matchedCity: null,
+      referral: { enabled: false, offerText: null, numberText: null },
+      _error: 'proxy_failed'
+    });
   }
 });
 
