@@ -1,5 +1,15 @@
 /**
- * ROX Booking Widget v1.16 - Server-Authoritative Tech Routing + Step Sync
+ * ROX Booking Widget v1.17 - Config-driven weekend fee + Server-Authoritative Tech Routing
+ *
+ * v1.17 Changes (2026-06-25):
+ *   - FIX: the Saturday weekend-service-call fee shown on the calendar is no
+ *           longer hardcoded $148. It now reads state.availability.weekendFee
+ *           (the server sources it from weekend-handler.getWeekendFee(), the
+ *           same dashboard-tunable value voice and chat use), falling back to
+ *           148 only if an older server build omitted the field. Closes the
+ *           last hardcoded-fee drift in the weekend-fee cross-channel gap.
+ *           Requires the matching booking-api.js change that adds weekendFee to
+ *           the /availability response, and a ?v= cache-bust on the embed.
  *
  * v1.16 Changes (2026-06-21):
  *   - FIX: Booking widget no longer computes the tech tag client-side and
@@ -1068,6 +1078,12 @@
 
         // Saturday fee disclosure — match voice and chat channel behavior
         const isSaturdayRepair = dayData.dayOfWeek === 'Saturday' && state.data.serviceType === 'repair';
+        // v1.17 — weekend fee is config-driven: read it from the /availability
+        // response (server sources it from weekend-handler.getWeekendFee(), the
+        // same dashboard-tunable value voice and chat use). Fall back to 148 if an
+        // older server build didn't send it, so the note is never blank.
+        const weekendFeeAmt = (state.availability && state.availability.weekendFee) || 148;
+        const weekendFeeNote = 'Weekend service calls are billed at $' + weekendFeeAmt + ', waived if you proceed with repairs.';
 
         const shortLabel = (s) => {
           try {
@@ -1077,7 +1093,7 @@
             return fmt(st) + ' - ' + fmt(en);
           } catch (e) { return s.formatted; }
         };
-        slotsHtml = `<div class="rxb-slots"><div class="rxb-slots-title">Available times for ${dayData.displayDate}</div>${isSaturdayRepair ? `<div style="background:#FFF7ED;border:1px solid #FDBA74;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:14px;color:#9A3412;"><strong>\uD83D\uDCC5 Weekend Service Call</strong> \u2014 Weekend service calls are billed at $148, waived if you proceed with repairs.</div>` : ''}<div class="rxb-slots-grid">${uniqueSlots.map(s => `<button class="rxb-slot-btn${state.data.selectedSlot && state.data.selectedSlot.start === s.start ? ' selected' : ''}" data-action="select-slot" data-idx="${s.originalIdx}">${shortLabel(s)}</button>`).join('')}</div></div>`;
+        slotsHtml = `<div class="rxb-slots"><div class="rxb-slots-title">Available times for ${dayData.displayDate}</div>${isSaturdayRepair ? `<div style="background:#FFF7ED;border:1px solid #FDBA74;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:14px;color:#9A3412;"><strong>\uD83D\uDCC5 Weekend Service Call</strong> \u2014 ${weekendFeeNote}</div>` : ''}<div class="rxb-slots-grid">${uniqueSlots.map(s => `<button class="rxb-slot-btn${state.data.selectedSlot && state.data.selectedSlot.start === s.start ? ' selected' : ''}" data-action="select-slot" data-idx="${s.originalIdx}">${shortLabel(s)}</button>`).join('')}</div></div>`;
       }
     }
 
