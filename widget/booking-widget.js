@@ -1,5 +1,33 @@
 /**
- * ROX Booking Widget v1.18 - Tentative "office will confirm" slots are finally visible
+ * ROX Booking Widget v1.19 - The estimate path asks what the estimate is FOR
+ *
+ * v1.19 Changes (2026-08-12):
+ *   - ADD: STEPS.ESTIMATE_FOR — "What are you looking to get an estimate on?"
+ *           with four options (Full HVAC System / Heat Pump Only / A/C Only /
+ *           Furnace Only) that map to real HousecallPro Free Estimate price
+ *           book items server-side. Placed BEFORE the calendar.
+ *   - ADD: time-limited promo banner, sent by the server with its expiry
+ *           already applied (config/estimate-options.js). The widget never
+ *           decides whether a promo is live, so a banner announcing a deadline
+ *           cannot outlive that deadline.
+ *   - FIX: estimates no longer ask "How old is your system?", the Rox-installed
+ *           question, or "Describe your issue". None of the three affect how an
+ *           estimate is routed — every estimate goes to the 'sales' tag
+ *           regardless — so they were questions whose answers were collected
+ *           and then not used. Three fewer steps to a booked estimate.
+ *   - FIX: the Review screen no longer renders an empty "System Age" row when
+ *           there is no system age, and shows "Estimate For" instead.
+ *   - REFACTOR: pathFor(serviceType, customerType) — the flow-name ternary was
+ *           duplicated at three call sites; adding the estimate flow to two of
+ *           three would have produced a customer who gets the estimate
+ *           questions on the way in and the repair questions after a failed
+ *           phone lookup.
+ *   - Requires rox-ai-answering v2.41.9 (/start estimateConfig + estimateFor).
+ *           Falls back to a static option list and no promo on an older server.
+ *   - CACHE-BUST: bump the WordPress embed's ?v=N by one.
+ *
+ * v1.18 Changes (2026-08-12):
+ *   - Tentative "office will confirm" slots are finally visible (see below).
  *
  * v1.18 Changes (2026-08-12):
  *   - FIX: tentative slots now render their .formatted label and a banner.
@@ -289,6 +317,9 @@
     SYSTEM_AGE: 'system_age',
     CALENDAR: 'calendar',
     DESCRIBE_ISSUE: 'describe_issue',
+    // v1.19 — free-estimate subject. Replaces SYSTEM_AGE + ROX_INSTALLED +
+    // DESCRIBE_ISSUE for the estimate path; see STEP_FLOW.est_* below.
+    ESTIMATE_FOR: 'estimate_for',
     ADDRESS: 'address',
     CONTACT_INFO: 'contact_info',
     CONFIRM: 'confirm',
@@ -347,8 +378,55 @@
       STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.PHONE_LOOKUP,
       STEPS.PCC_ASK, STEPS.SYSTEM_AGE, STEPS.CALENDAR,
       STEPS.DESCRIBE_ISSUE, STEPS.CONFIRM
+    ],
+    // ── v1.19 — THE ESTIMATE PATH ────────────────────────────────────────
+    // Estimates used to run on the `new` / `existing` flows, which meant a
+    // customer asking to be quoted for a new system was asked how old their
+    // current one is, whether ROX installed it, and to "describe your issue".
+    //
+    // None of those route an estimate: TECH_ROUTING.getTag sends every estimate
+    // to the 'sales' tag regardless of age, and heat-pump-router returns no
+    // override for estimates. Rox-installed drives the WARRANTY handoff, which
+    // is meaningless for a replacement quote. So all three were questions whose
+    // answers were collected and then not used — friction with no payoff.
+    //
+    // ESTIMATE_FOR sits BEFORE the calendar deliberately. What the customer
+    // wants quoted is the one thing the comfort advisor actually needs, it is
+    // the natural first question, and it is where the time-limited rebate
+    // notice belongs — a deadline shown AFTER someone has already picked a date
+    // has lost most of its point.
+    est_new: [
+      STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.QUICK_INFO,
+      STEPS.ESTIMATE_FOR, STEPS.CALENDAR,
+      STEPS.ADDRESS, STEPS.CONTACT_INFO, STEPS.CONFIRM
+    ],
+    est_existing: [
+      STEPS.SERVICE_TYPE, STEPS.CUSTOMER_TYPE, STEPS.PHONE_LOOKUP,
+      STEPS.ESTIMATE_FOR, STEPS.CALENDAR, STEPS.CONFIRM
     ]
   };
+
+  /**
+   * v1.19 — the ONE place a service type becomes a flow name.
+   *
+   * This ternary previously appeared at three separate call sites
+   * (select-customer-type, select-pcc, switchToNewCustomer), each spelling out
+   * `serviceType === 'maintenance' ? 'maint_x' : 'x'`. Adding the estimate flow
+   * to two of three would have produced a customer who gets the estimate
+   * questions on the way in and the repair questions after a failed phone
+   * lookup. Centralised so that cannot happen.
+   *
+   * @param {string} serviceType  'repair' | 'estimate' | 'maintenance' | 'message'
+   * @param {string} customerType 'new' | 'existing'
+   * @returns {string} a key of STEP_FLOW
+   */
+  function pathFor(serviceType, customerType) {
+    const existing = customerType === 'existing';
+    if (serviceType === 'message')     return existing ? 'message_existing' : 'message_new';
+    if (serviceType === 'maintenance') return existing ? 'maint_existing'   : 'maint_new';
+    if (serviceType === 'estimate')    return existing ? 'est_existing'     : 'est_new';
+    return existing ? 'existing' : 'new';
+  }
 
   // Service area zip codes (Denver metro)
   const SERVICE_AREA_ZIPS = new Set([
@@ -368,6 +446,9 @@
     path: null,
     data: {
       serviceType: null, customerType: null, systemAge: null,
+      // v1.19 — free-estimate subject ('full_system' | 'heat_pump' | 'ac' |
+      // 'furnace'). Server-validated; see config/estimate-options.js.
+      estimateFor: null,
       selectedDate: null, selectedSlot: null, issue: '',
       name: '', phone: '', email: '', message: '',
       // v1.10 — name now collected as two separate fields. The combined
@@ -778,6 +859,7 @@
       case STEPS.REFERRAL: return renderReferral();
       case STEPS.CALENDAR: return renderCalendar();
       case STEPS.DESCRIBE_ISSUE: return renderDescribeIssue();
+      case STEPS.ESTIMATE_FOR: return renderEstimateFor();
       case STEPS.MESSAGE: return renderMessage();
       case STEPS.PCC_ASK: return renderPccAsk();
       case STEPS.PCC_TYPE: return renderPccType();
@@ -1147,6 +1229,61 @@
     return `<div class="rxb-card"><div class="rxb-card-title">Pick a Date & Time</div><div class="rxb-card-subtitle">Select an available day, then choose a time slot</div>${pricingHtml}${errorHtml}<div class="rxb-calendar"><div class="rxb-cal-header"><button class="rxb-cal-nav-btn" data-action="cal-prev" ${!canPrev ? 'disabled' : ''}>\u2039</button><div class="rxb-cal-title">${monthName}</div><button class="rxb-cal-nav-btn" data-action="cal-next" ${!canNext ? 'disabled' : ''}>\u203A</button></div><div class="rxb-cal-grid">${daysHtml}</div></div>${slotsHtml}${furtherOutHtml}${renderNav(true, !!state.data.selectedSlot)}</div>`;
   }
 
+  // ── v1.19 — ESTIMATE SUBJECT ─────────────────────────────────────────────
+  // Static fallback list. The server sends the real one in /start's
+  // `estimateConfig` (sourced from config/estimate-options.js); this is only
+  // reached if /start failed or an older server build is deployed, so the step
+  // renders something usable rather than an empty card. Values MUST match the
+  // server's wire values — the server validates against its own list and drops
+  // anything it does not recognise, so a drift here shows up as a booking with
+  // no estimate subject rather than a wrong line item.
+  const ESTIMATE_OPTIONS_FALLBACK = [
+    { value: 'full_system', label: 'Full HVAC System', desc: 'Furnace and air conditioner together', icon: '🏠' },
+    { value: 'heat_pump',   label: 'Heat Pump Only',   desc: 'High-efficiency electric heating and cooling', icon: '♻️' },
+    { value: 'ac',          label: 'A/C Only',         desc: 'Replace the air conditioner', icon: '❄️' },
+    { value: 'furnace',     label: 'Furnace Only',     desc: 'Replace the furnace', icon: '🔥' }
+  ];
+
+  function getEstimateOptions() {
+    const cfg = state._estimateConfig;
+    return (cfg && Array.isArray(cfg.options) && cfg.options.length)
+      ? cfg.options
+      : ESTIMATE_OPTIONS_FALLBACK;
+  }
+
+  function renderEstimateFor() {
+    const chosen = state.data.estimateFor;
+    const errorHtml = state.error ? `<div class="rxb-error">${state.error}</div>` : '';
+
+    // The promo comes from the server WITH its own expiry already applied —
+    // config/estimate-options.js stops sending it once the date passes, so this
+    // banner cannot outlive the deadline it announces. The widget never decides
+    // whether a promo is live; it only renders what it was given.
+    const promo = state._estimateConfig && state._estimateConfig.promo;
+    const promoHtml = promo
+      ? `<div style="background:#ECFDF5;border:1px solid #6EE7B7;border-radius:10px;padding:14px 16px;margin-bottom:18px;font-size:14px;color:#065F46;line-height:1.5">`
+        + `<strong>⏰ ${escapeHtml(promo.headline)}</strong><br>${escapeHtml(promo.body)}</div>`
+      : '';
+
+    // Same markup as renderServiceType / renderCustomerType so this step
+    // inherits the widget's existing option styling — no new CSS, and it can't
+    // drift from the look of the other choice steps.
+    const optionsHtml = getEstimateOptions().map(o =>
+      `<button class="rxb-option-btn${chosen === o.value ? ' selected' : ''}" data-action="select-estimate-for" data-value="${escapeHtml(o.value)}">`
+      + `<div class="rxb-option-icon">${o.icon || ''}</div>`
+      + `<div><div class="rxb-option-label">${escapeHtml(o.label)}</div>`
+      + `<div class="rxb-option-desc">${escapeHtml(o.desc || '')}</div></div>`
+      + `</button>`
+    ).join('');
+
+    return `<div class="rxb-card">`
+      + `<div class="rxb-card-title">What are you looking to get an estimate on?</div>`
+      + `<div class="rxb-card-subtitle">So we send the right comfort advisor with the right information</div>`
+      + `${errorHtml}${promoHtml}`
+      + `<div class="rxb-options">${optionsHtml}</div>`
+      + `${renderNav(true, !!chosen)}</div>`;
+  }
+
   function renderDescribeIssue() {
     return `<div class="rxb-card"><div class="rxb-card-title">Describe Your Issue</div><div class="rxb-card-subtitle">Help our technician prepare for your visit</div><div class="rxb-field"><label class="rxb-label">What's going on?</label><textarea class="rxb-textarea" id="rxb-issue" placeholder="e.g., My AC is blowing warm air, making a loud noise, furnace won't turn on...">${state.data.issue || ''}</textarea></div>${renderNav(true, true)}</div>`;
   }
@@ -1225,11 +1362,25 @@
       serviceDisplay = d.pccType === 'cooling' ? 'PCC A/C Maintenance (included)' : 'PCC Furnace Maintenance (included)';
     }
     const ageLabels = { '0-2': '0\u20132 Years', '3-10': '3\u201310 Years', '10+': '10+ Years' };
+    // v1.19 \u2014 the estimate path no longer asks for system age, so this row has
+    // to be conditional. Before this change it rendered unconditionally and
+    // would have printed an empty "System Age" row for every estimate, since
+    // `ageLabels[null] || null` is null.
+    const ageRowHtml = d.systemAge
+      ? `<div class="rxb-summary-row"><span class="rxb-summary-label">System Age</span><span class="rxb-summary-value">${ageLabels[d.systemAge] || d.systemAge}</span></div>`
+      : '';
+    // The estimate subject, shown by its human label rather than the wire value.
+    const estOpt = d.estimateFor
+      ? getEstimateOptions().find(o => o.value === d.estimateFor)
+      : null;
+    const estimateRowHtml = estOpt
+      ? `<div class="rxb-summary-row"><span class="rxb-summary-label">Estimate For</span><span class="rxb-summary-value">${escapeHtml(estOpt.label)}</span></div>`
+      : '';
     let addressStr = '';
     if (d.address && d.address.street) { addressStr = `${d.address.street}, ${d.address.city}, ${d.address.state} ${d.address.zip}`; }
     else if (d.customer?.address) { const ca = d.customer.address; addressStr = `${ca.street}, ${ca.city}`; }
 
-    return `<div class="rxb-card"><div class="rxb-card-title">Review & Confirm</div><div class="rxb-card-subtitle">Make sure everything looks right</div>${errorHtml}<div class="rxb-summary"><div class="rxb-summary-row"><span class="rxb-summary-label">Service</span><span class="rxb-summary-value">${serviceLabels[d.serviceType] || d.serviceType}</span></div><div class="rxb-summary-row"><span class="rxb-summary-label">Date & Time</span><span class="rxb-summary-value">${dateDisplay} at ${timeDisplay}</span></div><div class="rxb-summary-row"><span class="rxb-summary-label">System Age</span><span class="rxb-summary-value">${ageLabels[d.systemAge] || d.systemAge}</span></div>${d.issue ? `<div class="rxb-summary-row"><span class="rxb-summary-label">Issue</span><span class="rxb-summary-value" style="max-width:60%">${escapeHtml(d.issue)}</span></div>` : ''}<div class="rxb-summary-row"><span class="rxb-summary-label">Name</span><span class="rxb-summary-value">${escapeHtml(d.name)}</span></div>${d.phone ? `<div class="rxb-summary-row"><span class="rxb-summary-label">Phone</span><span class="rxb-summary-value">${formatPhone(d.phone)}</span></div>` : ''}${addressStr ? `<div class="rxb-summary-row"><span class="rxb-summary-label">Address</span><span class="rxb-summary-value" style="max-width:60%">${escapeHtml(addressStr)}</span></div>` : ''}</div><label class="rxb-consent"><input type="checkbox" id="rxb-tcpa" ${state.data._tcpaConsent ? 'checked' : ''}><span class="rxb-consent-text">By submitting this form you consent to receive SMS and email messages from ${CONFIG.companyName} at the number and email provided. Consent is not a condition of purchase. Msg &amp; data rates may apply.</span></label><div class="rxb-nav" style="border-top:none; margin-top:24px; padding-top:0;"><button class="rxb-back-btn" data-action="back">\u2190 Back</button><button class="rxb-next-btn" data-action="confirm-booking">Confirm Booking \u2714</button></div></div>`;
+    return `<div class="rxb-card"><div class="rxb-card-title">Review & Confirm</div><div class="rxb-card-subtitle">Make sure everything looks right</div>${errorHtml}<div class="rxb-summary"><div class="rxb-summary-row"><span class="rxb-summary-label">Service</span><span class="rxb-summary-value">${serviceLabels[d.serviceType] || d.serviceType}</span></div><div class="rxb-summary-row"><span class="rxb-summary-label">Date & Time</span><span class="rxb-summary-value">${dateDisplay} at ${timeDisplay}</span></div>${ageRowHtml}${estimateRowHtml}${(d.issue && !estOpt) ? `<div class="rxb-summary-row"><span class="rxb-summary-label">Issue</span><span class="rxb-summary-value" style="max-width:60%">${escapeHtml(d.issue)}</span></div>` : ''}<div class="rxb-summary-row"><span class="rxb-summary-label">Name</span><span class="rxb-summary-value">${escapeHtml(d.name)}</span></div>${d.phone ? `<div class="rxb-summary-row"><span class="rxb-summary-label">Phone</span><span class="rxb-summary-value">${formatPhone(d.phone)}</span></div>` : ''}${addressStr ? `<div class="rxb-summary-row"><span class="rxb-summary-label">Address</span><span class="rxb-summary-value" style="max-width:60%">${escapeHtml(addressStr)}</span></div>` : ''}</div><label class="rxb-consent"><input type="checkbox" id="rxb-tcpa" ${state.data._tcpaConsent ? 'checked' : ''}><span class="rxb-consent-text">By submitting this form you consent to receive SMS and email messages from ${CONFIG.companyName} at the number and email provided. Consent is not a condition of purchase. Msg &amp; data rates may apply.</span></label><div class="rxb-nav" style="border-top:none; margin-top:24px; padding-top:0;"><button class="rxb-back-btn" data-action="back">\u2190 Back</button><button class="rxb-next-btn" data-action="confirm-booking">Confirm Booking \u2714</button></div></div>`;
   }
 
   function renderSuccess() {
@@ -1657,11 +1808,11 @@
           state.path = value === 'existing' ? 'message_existing' : 'message_new';
           if (value === 'existing') { goToStep(STEPS.PHONE_LOOKUP); } else { goToStep(STEPS.CONTACT_INFO); }
         } else if (value === 'existing') {
-          state.path = state.data.serviceType === 'maintenance' ? 'maint_existing' : 'existing';
+          state.path = pathFor(state.data.serviceType, 'existing');
           goToStep(STEPS.PHONE_LOOKUP);
         } else {
           // ALL new customers → QUICK_INFO first (name + phone)
-          state.path = state.data.serviceType === 'maintenance' ? 'maint_new' : 'new';
+          state.path = pathFor(state.data.serviceType, 'new');
           goToStep(STEPS.QUICK_INFO);
         }
         break;
@@ -1682,6 +1833,24 @@
         break;
       case 'rox-installed':
         await handleRoxInstalledAction(value);
+        break;
+      case 'select-estimate-for':
+        // v1.19 — record the estimate subject, push it to the server, then go
+        // straight to the calendar. The server resolves the choice to a
+        // HousecallPro price book UUID and sets the 'sales' tech tag; the
+        // widget never sees or sends a UUID.
+        //
+        // updateSession is AWAITED, not fire-and-forget: loadAvailability()
+        // reads session.data.techTag server-side, so racing the two would ask
+        // for availability before the tag exists.
+        state.data.estimateFor = value;
+        await updateSession({
+          serviceType:  'estimate',
+          customerType: state.data.customerType,
+          estimateFor:  value
+        });
+        goToStep(STEPS.CALENDAR);
+        loadAvailability();
         break;
       case 'select-date':
         state.data.selectedDate = value;
@@ -1777,7 +1946,10 @@
           goToStep(STEPS.PCC_TYPE);
         } else {
           state.data.isPccMember = false;
-          state.path = state.data.customerType === 'existing' ? 'maint_existing' : 'maint_new';
+          // Always a maintenance path here — PCC_ASK is only reachable from
+          // maint_* / pcc_* — so ask pathFor for the maintenance flow directly
+          // rather than re-deriving it from serviceType.
+          state.path = pathFor('maintenance', state.data.customerType);
           goToStep(STEPS.SYSTEM_AGE);
         }
         break;
@@ -1962,6 +2134,16 @@
 
   function validateStep() {
     switch (state.currentStep) {
+      // v1.19 — the Continue button is already disabled until an option is
+      // picked, but goNext() is also reachable from the Enter key, so the
+      // choice is validated here too rather than relying on a disabled button.
+      case STEPS.ESTIMATE_FOR:
+        if (!state.data.estimateFor) {
+          state.error = 'Please choose what you would like an estimate on.';
+          render();
+          return false;
+        }
+        return true;
       case STEPS.PHONE_LOOKUP:
         if (!state.data.customer && !state.data.phone) { state.error = 'Please enter your phone number.'; render(); return false; }
         return !!state.data.customer;
@@ -2030,7 +2212,13 @@
       // that don't echo this field fall back to 28 (the historical
       // hardcoded value), keeping the widget functional during rollouts.
       state._bookingHorizonDays = result.bookingHorizonDays || 28;
-      console.log(`[ROX Booking] Session started: ${state.sessionId} (afterHours=${state._isAfterHours}, horizon=${state._bookingHorizonDays}d)`);
+      // v1.19: estimate options + any live promo, from config/estimate-options.js
+      // server-side. Null on an older server build; getEstimateOptions() then
+      // uses the static fallback list and no promo renders — which is the right
+      // failure direction, since a promo names a deadline and must never be
+      // shown from stale client-side data.
+      state._estimateConfig = result.estimateConfig || null;
+      console.log(`[ROX Booking] Session started: ${state.sessionId} (afterHours=${state._isAfterHours}, horizon=${state._bookingHorizonDays}d, estimateOptions=${state._estimateConfig ? state._estimateConfig.options.length : 'fallback'}, promo=${state._estimateConfig && state._estimateConfig.promo ? state._estimateConfig.promo.id : 'none'})`);
     } catch (err) { console.error('[ROX Booking] Failed to start session:', err.message); }
   }
 
@@ -2076,7 +2264,7 @@
       goToStep(STEPS.CONTACT_INFO);
     } else {
       // Go to QUICK_INFO — phone is pre-filled from lookup attempt, just need name
-      state.path = state.data.serviceType === 'maintenance' ? 'maint_new' : 'new';
+      state.path = pathFor(state.data.serviceType, 'new');
       goToStep(STEPS.QUICK_INFO);
     }
   }
