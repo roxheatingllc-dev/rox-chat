@@ -1,5 +1,23 @@
 /**
- * ROX Booking Widget v1.17 - Config-driven weekend fee + Server-Authoritative Tech Routing
+ * ROX Booking Widget v1.18 - Tentative "office will confirm" slots are finally visible
+ *
+ * v1.18 Changes (2026-08-12):
+ *   - FIX: tentative slots now render their .formatted label and a banner.
+ *           When the routed tag has no bookable tech, the server synthesizes an
+ *           office-callback window (booking-api.js
+ *           synthesizeSalesBlockedTentativeDays) and marks each slot
+ *           tentative:true. The widget rendered those exactly like real slots —
+ *           a plain time range with nothing to indicate the appointment was not
+ *           confirmed. A server-side code comment claimed this widget "renders
+ *           .formatted directly"; it does not, and never did (shortLabel builds
+ *           the label from start/end and only reaches .formatted inside a
+ *           catch). So the "(office will confirm exact time)" disclosure that
+ *           the whole tentative path depends on had never been shown to a
+ *           customer. Found 2026-08-12 when the 'Sales' tag emptied and the
+ *           path fired for the first time in production.
+ *           Requires booking-api.js v2.41.8, which adds slot.tentative.
+ *   - CACHE-BUST: bump the WordPress embed's ?v=N by one. Nothing in this
+ *           build reaches customers until that edit is made.
  *
  * v1.17 Changes (2026-06-25):
  *   - FIX: the Saturday weekend-service-call fee shown on the calendar is no
@@ -1085,7 +1103,27 @@
         const weekendFeeAmt = (state.availability && state.availability.weekendFee) || 148;
         const weekendFeeNote = 'Weekend service calls are billed at $' + weekendFeeAmt + ', waived if you proceed with repairs.';
 
+        // \u2500\u2500 v1.18 \u2500 TENTATIVE ("office will confirm") SLOTS \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        // The server sends slots with tentative:true when no bookable advisor
+        // exists for the routed tag and it synthesized an office-callback
+        // window instead of querying real availability (booking-api.js
+        // synthesizeSalesBlockedTentativeDays). Those slots are NOT a firm
+        // appointment and the customer has to be told so.
+        //
+        // Until v1.18 they were rendered by the ordinary path below, which
+        // builds "6:00 AM - 11:00 AM" from start/end and never touches
+        // .formatted. A server-side comment asserted the opposite, so the
+        // "(office will confirm exact time)" text everyone believed was on
+        // screen had never once been displayed. Read the flag, not the label.
+        const isTentativeDay = uniqueSlots.some(s => s && s.tentative);
+        const tentativeNote =
+          'We\u2019ll call you to confirm the exact time. Picking a day here holds your place \u2014 '
+          + 'it is not a confirmed appointment time yet.';
+
         const shortLabel = (s) => {
+          // Tentative slots carry their own human label; the start/end times
+          // are a placeholder window, not a real offer.
+          if (s && s.tentative && s.formatted) return s.formatted;
           try {
             const st = new Date(s.start);
             const en = new Date(s.end);
@@ -1093,7 +1131,10 @@
             return fmt(st) + ' - ' + fmt(en);
           } catch (e) { return s.formatted; }
         };
-        slotsHtml = `<div class="rxb-slots"><div class="rxb-slots-title">Available times for ${dayData.displayDate}</div>${isSaturdayRepair ? `<div style="background:#FFF7ED;border:1px solid #FDBA74;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:14px;color:#9A3412;"><strong>\uD83D\uDCC5 Weekend Service Call</strong> \u2014 ${weekendFeeNote}</div>` : ''}<div class="rxb-slots-grid">${uniqueSlots.map(s => `<button class="rxb-slot-btn${state.data.selectedSlot && state.data.selectedSlot.start === s.start ? ' selected' : ''}" data-action="select-slot" data-idx="${s.originalIdx}">${shortLabel(s)}</button>`).join('')}</div></div>`;
+        const tentativeBannerHtml = isTentativeDay
+          ? `<div style="background:#EFF6FF;border:1px solid #93C5FD;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:14px;color:#1E3A8A;"><strong>\uD83D\uDCDE We\u2019ll confirm this time with you</strong> \u2014 ${tentativeNote}</div>`
+          : '';
+        slotsHtml = `<div class="rxb-slots"><div class="rxb-slots-title">${isTentativeDay ? 'Requested day' : 'Available times'} for ${dayData.displayDate}</div>${tentativeBannerHtml}${isSaturdayRepair ? `<div style="background:#FFF7ED;border:1px solid #FDBA74;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:14px;color:#9A3412;"><strong>\uD83D\uDCC5 Weekend Service Call</strong> \u2014 ${weekendFeeNote}</div>` : ''}<div class="rxb-slots-grid">${uniqueSlots.map(s => `<button class="rxb-slot-btn${state.data.selectedSlot && state.data.selectedSlot.start === s.start ? ' selected' : ''}" data-action="select-slot" data-idx="${s.originalIdx}">${shortLabel(s)}</button>`).join('')}</div></div>`;
       }
     }
 
