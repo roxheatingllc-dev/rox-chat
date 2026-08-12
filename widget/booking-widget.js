@@ -1238,7 +1238,7 @@
   // anything it does not recognise, so a drift here shows up as a booking with
   // no estimate subject rather than a wrong line item.
   const ESTIMATE_OPTIONS_FALLBACK = [
-    { value: 'full_system', label: 'Full HVAC System', desc: 'Furnace and air conditioner together', icon: '🏠' },
+    { value: 'full_system', label: 'Full HVAC System', desc: 'Heat pump and furnace, or A/C and furnace', icon: '🏠' },
     { value: 'heat_pump',   label: 'Heat Pump Only',   desc: 'High-efficiency electric heating and cooling', icon: '♻️' },
     { value: 'ac',          label: 'A/C Only',         desc: 'Replace the air conditioner', icon: '❄️' },
     { value: 'furnace',     label: 'Furnace Only',     desc: 'Replace the furnace', icon: '🔥' }
