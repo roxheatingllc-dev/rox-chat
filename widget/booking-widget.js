@@ -1,5 +1,24 @@
 /**
- * ROX Booking Widget v1.19 - The estimate path asks what the estimate is FOR
+ * ROX Booking Widget v1.20 - The server decides the price, not the widget
+ *
+ * v1.20 Changes (2026-08-13):
+ *   - FIX: getPricingBanner() no longer computes a fee. It renders
+ *          `state.availability.visitFee`, resolved server-side by
+ *          config/pricing.js in rox-ai-answering. This widget lives in a
+ *          DIFFERENT git repo from the pricing rule, so its own copy of
+ *          "if 10+ then $49 else $148" could not be updated when the rule
+ *          changed -- and was not. Same pattern as weekendFee in v1.17.
+ *   - FIX: "Not Sure" no longer submits '10+'. It shared a value with the
+ *          "10+ Years" button, so an unknown age was priced at $49 and routed
+ *          to a sales tech, and BOTH buttons highlighted when either was
+ *          picked. Unknown now submits 'unknown' and prices at the standard
+ *          fee (Jason 2026-08-13: never quote low and correct upward).
+ *   - FIX: the "3-10 Years" button now reads "3-9 Years". The old labels
+ *          overlapped at exactly ten, so a ten-year system was priced
+ *          differently depending on which button the customer pressed.
+ *   - CACHE: bump the WordPress embed to ?v=11.
+ *
+ * v1.19 Changes (2026-08-12):
  *
  * v1.19 Changes (2026-08-12):
  *   - ADD: STEPS.ESTIMATE_FOR — "What are you looking to get an estimate on?"
@@ -927,11 +946,14 @@
   }
 
   function renderSystemAge() {
+    // v1.20: ranges are disjoint and 'Not Sure' has its own value. The bucket
+    // token '3-10' is kept verbatim because tech routing, HCP notes and office
+    // emails all key on that exact string server-side; only the LABEL changes.
     const options = [
       { value: '0-2', icon: '\uD83C\uDD95', label: '0\u20132 Years' },
-      { value: '3-10', icon: '\u2705', label: '3\u201310 Years' },
+      { value: '3-10', icon: '\u2705', label: '3\u20139 Years' },
       { value: '10+', icon: '\uD83D\uDD34', label: '10+ Years' },
-      { value: '10+', icon: '\u2753', label: 'Not Sure' }
+      { value: 'unknown', icon: '\u2753', label: 'Not Sure' }
     ];
     return `<div class="rxb-card"><div class="rxb-card-title">How old is your system?</div><div class="rxb-card-subtitle">This helps us send the right technician</div><div class="rxb-options">${options.map(o => `<button class="rxb-option-btn${state.data.systemAge === o.value ? ' selected' : ''}" data-action="select-age" data-value="${o.value}"><div class="rxb-option-icon">${o.icon}</div><div><div class="rxb-option-label">${o.label}</div></div></button>`).join('')}</div>${renderNav(true, false)}</div>`;
   }
@@ -1089,18 +1111,27 @@
   }
 
   // ── Pricing banner for calendar step ──
-  // MULTI-TENANT: Move fee amounts to tenantConfig.fees in SaaS version
+  // v1.20: this function no longer knows any prices. The server resolves the
+  // fee with config/pricing.js and sends it as `availability.visitFee`. Adding
+  // an amount back into this file re-creates the drift it was written to end.
   function getPricingBanner() {
     const svc = state.data.serviceType;
     const isPcc = state.data.isPccMember;
+    const visitFee = state.availability && state.availability.visitFee;
 
     if (svc === 'repair') {
-      // 10+ year systems get the reduced $49 diagnostic fee (sales tech visit)
-      // Matches voice channel getServiceFee() and chat getRepairFeeInfo() behavior.
-      if (state.data.systemAge === '10+') {
-        return '<div class="rxb-pricing-banner repair"><strong>\uD83D\uDD0D Diagnostic Fee: $49</strong><br>The $49 diagnostic fee is waived if you proceed with repairs. One of our comfort advisors will assess your system.</div>';
+      // Server-resolved. Falls back to a fee-free line rather than guessing a
+      // number: an older server build that predates visitFee would otherwise
+      // have this widget confidently quote a stale amount, which is the exact
+      // failure being fixed. No banner beats a wrong price.
+      if (visitFee && visitFee.text) {
+        var feeLabel = visitFee.isFree
+          ? 'No Charge For This Visit'
+          : 'Service Call Fee: $' + visitFee.amount;
+        return '<div class="rxb-pricing-banner repair"><strong>\uD83D\uDCB0 ' + feeLabel +
+               '</strong><br>' + visitFee.text + '</div>';
       }
-      return '<div class="rxb-pricing-banner repair"><strong>\uD83D\uDCB0 Service Call Fee: $148</strong><br>The $148 service call fee is waived if you proceed with repairs.</div>';
+      return '<div class="rxb-pricing-banner repair"><strong>\uD83D\uDCB0 Service Call</strong><br>Your technician will confirm the service call fee when they schedule your visit.</div>';
     }
     if (svc === 'maintenance') {
       if (isPcc) {
