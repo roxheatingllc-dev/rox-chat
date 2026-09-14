@@ -1,4 +1,20 @@
 /**
+ * ROX Chat Widget v3.2 - Leaving is reported when it happens
+ *
+ * v3.2 Changes (2026-09-14):
+ *   - 🔴 ADD: the widget now calls /api/chat/end when the page goes away. It
+ *     never did. The endpoint, its proxy in routes/chat-routes.js and its
+ *     handler in engine-api.js have all existed for months with NO CALLER in
+ *     the browser, so every abandoned chat waited the full 30-minute TTL
+ *     before the office heard anything.
+ *   - Uses visibilitychange (the only leave signal phones send reliably) with
+ *     a 45s grace timer that returning cancels, plus pagehide/beforeunload for
+ *     a real departure. Closing the chat BUBBLE is deliberately not a signal —
+ *     the customer can reopen it and expects their conversation to still be
+ *     there.
+ *   - REQUIRES rox-ai-answering v2.167.0, which stops deleting the session on
+ *     /chat/end. Deploy the server FIRST.
+ *
  * ROX Chat Widget v3.1 - Theme-Aware Embeddable Chat Component
  * 
  * Embed on any website:
@@ -791,6 +807,50 @@
       buildWidget();
     }
   }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // v3.2 — ABANDONMENT SIGNAL
+  //
+  // 🔴 Closing the chat window is NOT abandonment. closeChat() only hides the
+  // panel and the customer can reopen it; the server deletes the session on
+  // /chat/end, so wiring the close button here would throw away a conversation
+  // somebody intends to come back to. Only the PAGE going away counts.
+  //
+  // visibilitychange is the only leave signal phones send reliably, and it also
+  // fires on a ten-second app-switch — hence the grace timer. A real departure
+  // (pagehide / beforeunload) skips it.
+  // ═══════════════════════════════════════════════════════════════════════
+  const CHAT_ABANDON_GRACE_MS = (CONFIG.abandonGraceMs != null)
+    ? Number(CONFIG.abandonGraceMs) : 45000;
+  let _endTimer = null;
+  let _endSignalled = false;
+
+  function signalChatEnd(reason) {
+    if (_endSignalled || !sessionId) return;
+    _endSignalled = true;
+    const payload = JSON.stringify({ sessionId: sessionId, reason: reason });
+    try {
+      navigator.sendBeacon(
+        `${CONFIG.serverUrl}/api/chat/end`,
+        new Blob([payload], { type: 'application/json' })
+      );
+    } catch (_) { /* a failed beacon must never break the page */ }
+  }
+
+  function cancelEndTimer() {
+    if (_endTimer) { clearTimeout(_endTimer); _endTimer = null; }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      cancelEndTimer();
+      _endTimer = setTimeout(() => signalChatEnd('hidden'), CHAT_ABANDON_GRACE_MS);
+    } else {
+      cancelEndTimer();
+    }
+  });
+  window.addEventListener('pagehide', () => { cancelEndTimer(); signalChatEnd('unload'); });
+  window.addEventListener('beforeunload', () => { cancelEndTimer(); signalChatEnd('unload'); });
 
   init();
 })();

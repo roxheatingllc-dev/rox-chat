@@ -1,4 +1,20 @@
 /**
+ * ROX Booking Widget v1.22 - Leaving is reported when it happens
+ *
+ * v1.22 Changes (2026-09-14):
+ *   - FIX: the abandon beacon was skipped for every customer whose name AND
+ *     phone we held. The guard's comment reasons about the exit-capture modal;
+ *     the code also cancelled the notification. Measured: a full run to the
+ *     calendar produced no abandon line at all.
+ *   - ADD: visibilitychange + pagehide leave detection, because beforeunload
+ *     does not fire reliably on phones. A hide starts a 45s grace timer that
+ *     returning cancels; a real departure skips the timer.
+ *   - ADD: selectedSlot / selectedDate / issue are pushed when CHOSEN, not
+ *     only at confirm, so an abandon alert can name the slot and the problem.
+ *     Both rows existed in the office email template and were always blank.
+ *   - REQUIRES rox-ai-answering v2.167.0, which stops deleting the session on
+ *     /abandon. Deploy the server FIRST.
+ *
  * ROX Booking Widget v1.21 - A lost session is rebuilt, not apologised for
  *
  * v1.21 Changes (2026-09-14):
@@ -1914,7 +1930,19 @@
         break;
       case 'select-slot':
         const dayData = state.availability.availableDays.find(d => d.date === state.data.selectedDate);
-        if (dayData) { const idx = parseInt(e.currentTarget.dataset.idx); state.data.selectedSlot = dayData.slots[idx]; render(); }
+        if (dayData) {
+          const idx = parseInt(e.currentTarget.dataset.idx);
+          state.data.selectedSlot = dayData.slots[idx];
+          render();
+          // v1.22 — push it NOW, not at confirm. If this customer walks away
+          // from here, the office needs to know which slot they had chosen;
+          // that is the whole content of the callback. Fire-and-forget: a
+          // failed sync must never block the customer from continuing.
+          updateSession({
+            selectedDate: state.data.selectedDate,
+            selectedSlot: state.data.selectedSlot
+          });
+        }
         break;
       case 'cal-prev':
         if (!state._calMonth && state._calMonth !== 0) { state._calMonth = new Date().getMonth(); state._calYear = new Date().getFullYear(); }
@@ -2154,7 +2182,18 @@
 
   function saveFormData() {
     const issue = root.querySelector('#rxb-issue');
-    if (issue) state.data.issue = issue.value.trim();
+    if (issue) {
+      const typed = issue.value.trim();
+      // v1.22 — sync the issue text the first time it is captured, so an
+      // abandon alert can say what was actually wrong instead of leaving the
+      // office an empty Issue row.
+      if (typed && typed !== state.data.issue) {
+        state.data.issue = typed;
+        updateSession({ issue: typed });
+      } else {
+        state.data.issue = typed;
+      }
+    }
     const message = root.querySelector('#rxb-message');
     if (message) state.data.message = message.value.trim();
     const street = root.querySelector('#rxb-street');
@@ -3063,14 +3102,78 @@
       if (e.clientY <= 0 && !_exitShown) showExitCapture();
     });
 
-    // Back button / page unload — also trigger
-    window.addEventListener('beforeunload', (e) => {
-      if (!_exitShown && state.data.name && state.data.phone) return; // already have info
-      // Can't show modal in beforeunload, but sendBeacon with whatever we have
+    // ═══════════════════════════════════════════════════════════════════
+    // v1.22 — ABANDONMENT IS SIGNALLED WHEN THE PAGE GOES AWAY, NOT 30
+    // MINUTES LATER.
+    //
+    // 🔴 THE BUG THIS REPLACES. The old handler read:
+    //
+    //     if (!_exitShown && state.data.name && state.data.phone) return;
+    //
+    // sitting ABOVE the sendBeacon. The comment ("already have info") is
+    // reasoning about whether to show the exit-capture modal; the code also
+    // cancelled the NOTIFICATION. So the beacon fired only for customers we
+    // knew nothing useful about — and hasBookingAbandonData() on the server
+    // then dropped most of those. The two guards cancelled each other out, and
+    // every customer who got past Quick Info abandoned in total silence until
+    // the 30-minute TTL sweeper noticed. Measured 2026-09-14: a full run to the
+    // calendar produced no abandon line at all.
+    //
+    // 🔴 WHY visibilitychange AND NOT JUST beforeunload. beforeunload does not
+    // fire reliably on phones — iOS Safari frequently never sends it when a tab
+    // is backgrounded or the app is switched away. visibilitychange is the one
+    // signal a phone reliably sends. It is also the reason the SERVER no longer
+    // deletes the session on /abandon (v2.167.0): this fires when a customer
+    // merely glances at a text, and forgetting their session there would 404
+    // them on return — the v2.163.0 failure, re-introduced on every mobile
+    // customer.
+    //
+    // 🔴 WHY THE GRACE DELAY. An app-switch is not an abandonment. Firing the
+    // instant the page hides would alert the office about most mobile
+    // customers mid-booking, who then book anyway — and an office that learns
+    // to ignore the alert is worse than no alert. So a hide starts a timer and
+    // coming back cancels it. A REAL departure (pagehide / beforeunload) skips
+    // the timer entirely, because there is nothing left to come back to.
+    //
+    // Background timers are throttled by browsers, so the grace window is a
+    // floor, not a promise. That is fine: it is bounded by the 30-minute
+    // sweeper either way, and 45 seconds reads as instant to a person watching
+    // a channel.
+    // ═══════════════════════════════════════════════════════════════════
+    const ABANDON_GRACE_MS = (CONFIG.abandonGraceMs != null)
+      ? Number(CONFIG.abandonGraceMs) : 45000;
+    let _abandonTimer = null;
+    let _abandonSignalled = false;
+
+    function signalAbandon(reason) {
+      if (_abandonSignalled) return;
       if (!state.sessionId || state.currentStep === STEPS.SUCCESS) return;
-      const payload = JSON.stringify({ sessionId: state.sessionId, reason: 'unload' });
-      navigator.sendBeacon(`${CONFIG.serverUrl}/api/booking/abandon`, new Blob([payload], { type: 'application/json' }));
+      _abandonSignalled = true;
+      const payload = JSON.stringify({ sessionId: state.sessionId, reason: reason });
+      try {
+        navigator.sendBeacon(
+          `${CONFIG.serverUrl}/api/booking/abandon`,
+          new Blob([payload], { type: 'application/json' })
+        );
+      } catch (_) { /* a failed beacon must never break the page */ }
+    }
+
+    function cancelAbandonTimer() {
+      if (_abandonTimer) { clearTimeout(_abandonTimer); _abandonTimer = null; }
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        cancelAbandonTimer();
+        _abandonTimer = setTimeout(() => signalAbandon('hidden'), ABANDON_GRACE_MS);
+      } else {
+        cancelAbandonTimer();
+      }
     });
+
+    // A real departure. No grace — they are not coming back to this page.
+    window.addEventListener('pagehide', () => { cancelAbandonTimer(); signalAbandon('unload'); });
+    window.addEventListener('beforeunload', () => { cancelAbandonTimer(); signalAbandon('unload'); });
 
     console.log('[ROX Booking] Widget initialized');
   }
