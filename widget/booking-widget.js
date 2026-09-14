@@ -1,4 +1,19 @@
 /**
+ * ROX Booking Widget v1.21 - A lost session is rebuilt, not apologised for
+ *
+ * v1.21 Changes (2026-09-14):
+ *          - api() now preserves the HTTP status and parsed body on the thrown
+ *            Error, so a 404 is distinguishable from a 500.
+ *          - recoverSession(): on a lost server-side session, open a new one
+ *            and replay everything state.data still holds, then retry ONCE.
+ *          - updateSession() no longer swallows a 404 silently.
+ *          - confirmBooking() retries through the recovery; the server's
+ *            v2.5.0 idempotency guard is what makes that safe.
+ *          Real customer: Michael Connelly, 2026-09-14, session db6b595e —
+ *          server restarted while he was on the calendar, and he got
+ *          "Something went wrong. Please call us." twice.
+ *          🔴 CACHE BUST: bump the WordPress embed to ?v=11.
+ *
  * ROX Booking Widget v1.20 - The server decides the price, not the widget
  *
  * v1.20 Changes (2026-08-13):
@@ -518,6 +533,12 @@
   // ============================================
   // API HELPERS
   // ============================================
+  // v1.21 — the thrown Error now CARRIES THE STATUS CODE and the parsed body.
+  // It used to collapse every non-2xx into a bare message, which is why a 404
+  // "Session not found or expired" was indistinguishable from a 500 and the
+  // customer got "Something went wrong. Please call us." either way. The
+  // reschedule helper below has preserved status since v1.12; this brings the
+  // booking path to parity so recoverSession() can branch on it.
   async function api(method, path, body = null) {
     const url = `${CONFIG.serverUrl}/api/booking${path}`;
     const options = { method, headers: { 'Content-Type': 'application/json' } };
@@ -525,7 +546,10 @@
     const res = await fetch(url, options);
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      throw new Error(err.error || err.message || `Request failed: ${res.status}`);
+      const e = new Error(err.error || err.message || `Request failed: ${res.status}`);
+      e.status = res.status;
+      e.body = err;
+      throw e;
     }
     return res.json();
   }
@@ -2355,12 +2379,99 @@
     } catch (err) { state.loading = false; state.error = 'Failed to load available times. Please try again or call ' + CONFIG.companyPhone; render(); }
   }
 
+  // ============================================
+  // v1.21 — SESSION RECOVERY
+  // ============================================
+  //
+  // 🔴 THE CALL THAT PAID FOR THIS. Michael Connelly, 2026-09-14, session
+  // db6b595e. He opened the widget at 16:13:37Z and was looking at the calendar
+  // at 16:14:36Z. At 16:15:28Z the server restarted, and booking sessions lived
+  // only in a server-side Map. His next two calls —
+  //     POST /booking/update-session -> 404
+  //     POST /booking/confirm        -> 404
+  // — produced "Something went wrong. Please call us." He tried the whole flow
+  // again at 16:20:11Z, hit 404/404 a second time, and phoned the office.
+  //
+  // 🔴 THE BROWSER NEVER LOST THE DATA. Every answer he gave was still sitting
+  // in state.data — service type, system age, the slot he picked, his name,
+  // phone, address, email. Only the SERVER forgot. So the honest response to a
+  // lost session is not an apology and a phone number: it is to open a new
+  // session, replay what we still hold, and carry on. The customer sees a
+  // moment's pause, not an error.
+  //
+  // The server side (booking-api v2.163.0) now persists sessions to Redis, so
+  // this path should rarely fire. It stays because the two defences answer
+  // different failures: Redis being down, a session genuinely past its TTL, or
+  // a customer who left the tab open over lunch. ONE attempt only — a recovery
+  // that can itself fail into a recovery is a loop, and a loop on /confirm is
+  // duplicate jobs.
+  let _recoveringSession = false;
+
+  function isLostSession(err) {
+    return !!err && err.status === 404;
+  }
+
+  async function recoverSession() {
+    if (_recoveringSession) return false;
+    _recoveringSession = true;
+    try {
+      console.warn('[ROX Booking] Session lost server-side — rebuilding from what the browser still holds');
+      const started = await api('POST', '/start', { tenantId: CONFIG.tenantId });
+      if (!started || !started.sessionId) return false;
+      const oldId = state.sessionId;
+      state.sessionId = started.sessionId;
+
+      // Replay everything the customer has already told us. Same field list the
+      // confirm step sends, so a recovered session is indistinguishable from one
+      // that never died.
+      await api('POST', '/update-session', {
+        sessionId: state.sessionId,
+        step: state.currentStep,
+        updates: {
+          serviceType:  state.data.serviceType,
+          customerType: state.data.customerType,
+          systemAge:    state.data.systemAge,
+          selectedDate: state.data.selectedDate,
+          selectedSlot: state.data.selectedSlot,
+          issue:        state.data.issue,
+          name:         state.data.name,
+          firstName:    state.data.firstName,
+          lastName:     state.data.lastName,
+          phone:        state.data.phone,
+          email:        state.data.email,
+          address:      state.data.address,
+          isPccMember:  state.data.isPccMember || false,
+          pccType:      state.data.pccType || null
+        }
+      });
+      console.warn('[ROX Booking] Session rebuilt: ' + oldId + ' -> ' + state.sessionId);
+      return true;
+    } catch (err) {
+      console.warn('[ROX Booking] Session recovery failed:', err.message);
+      return false;
+    } finally {
+      _recoveringSession = false;
+    }
+  }
+
   async function updateSession(updates) {
     try {
-      const result = await api('POST', '/update-session', { sessionId: state.sessionId, updates, step: state.currentStep });
-      return result;
+      return await api('POST', '/update-session', { sessionId: state.sessionId, updates, step: state.currentStep });
+    } catch (err) {
+      // v1.21 — a 404 here used to be swallowed silently (a console.warn and
+      // null), so the flow walked on with a session the server had never heard
+      // of and only died later, on /confirm.
+      if (isLostSession(err) && await recoverSession()) {
+        try {
+          return await api('POST', '/update-session', { sessionId: state.sessionId, updates, step: state.currentStep });
+        } catch (retryErr) {
+          console.warn('[ROX Booking] Session update failed after recovery:', retryErr.message);
+          return null;
+        }
+      }
+      console.warn('[ROX Booking] Session update failed:', err.message);
+      return null;
     }
-    catch (err) { console.warn('[ROX Booking] Session update failed:', err.message); return null; }
   }
 
   async function confirmBooking() {
@@ -2391,7 +2502,17 @@
         isPccMember:  state.data.isPccMember || false,
         pccType:      state.data.pccType || null
       });
-      const result = await api('POST', '/confirm', { sessionId: state.sessionId });
+      // v1.21 — one retry through recoverSession() on a lost session. The
+      // server's idempotency guard (booking-api v2.5.0) is what makes a retry
+      // safe: a session that already confirmed returns the original result with
+      // idempotent:true rather than creating a second job.
+      let result;
+      try {
+        result = await api('POST', '/confirm', { sessionId: state.sessionId });
+      } catch (err) {
+        if (!isLostSession(err) || !(await recoverSession())) throw err;
+        result = await api('POST', '/confirm', { sessionId: state.sessionId });
+      }
       state.loading = false;
       if (result.success) { state.confirmation = result.confirmation; state.currentStep = STEPS.SUCCESS; render(); }
       else { state.error = result.message || 'Failed to confirm booking. Please call ' + CONFIG.companyPhone; render(); }
