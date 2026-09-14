@@ -1,4 +1,11 @@
 /**
+ * ROX Chat Widget v3.3 - The beacon actually arrives
+ *
+ * v3.3 Changes (2026-09-14):
+ *   - 🔴 FIX: sends the beacon as a plain string rather than a Blob typed
+ *     application/json, which would be preflighted and dropped on unload.
+ *     REQUIRES routes/chat-routes.js to parse text/plain as JSON.
+ *
  * ROX Chat Widget v3.2 - Leaving is reported when it happens
  *
  * v3.2 Changes (2026-09-14):
@@ -829,11 +836,13 @@
     if (_endSignalled || !sessionId) return;
     _endSignalled = true;
     const payload = JSON.stringify({ sessionId: sessionId, reason: reason });
+    // 🔴 A STRING, NOT A TYPED BLOB. A cross-origin sendBeacon with
+    // application/json must be preflighted, and on unload the OPTIONS goes out
+    // and the POST never follows — measured in rox-chat's HTTP log on the
+    // booking widget, which had carried that bug since it was written.
+    // text/plain is CORS-safelisted, so there is no preflight to lose.
     try {
-      navigator.sendBeacon(
-        `${CONFIG.serverUrl}/api/chat/end`,
-        new Blob([payload], { type: 'application/json' })
-      );
+      navigator.sendBeacon(`${CONFIG.serverUrl}/api/chat/end`, payload);
     } catch (_) { /* a failed beacon must never break the page */ }
   }
 

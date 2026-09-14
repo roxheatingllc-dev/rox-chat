@@ -1,4 +1,14 @@
 /**
+ * ROX Booking Widget v1.23 - The beacon actually arrives
+ *
+ * v1.23 Changes (2026-09-14):
+ *   - 🔴 FIX: the abandon beacon was preflighted and dropped on unload. It
+ *     sent a Blob typed application/json, which is not CORS-safelisted, so a
+ *     cross-origin sendBeacon had to preflight — and the page died between the
+ *     OPTIONS and the POST. Measured in the HTTP log: OPTIONS 204, no POST.
+ *     Now sends a plain string (text/plain, safelisted, no preflight).
+ *     REQUIRES routes/booking-routes.js to parse text/plain as JSON.
+ *
  * ROX Booking Widget v1.22 - Leaving is reported when it happens
  *
  * v1.22 Changes (2026-09-14):
@@ -3150,11 +3160,31 @@
       if (!state.sessionId || state.currentStep === STEPS.SUCCESS) return;
       _abandonSignalled = true;
       const payload = JSON.stringify({ sessionId: state.sessionId, reason: reason });
+      // 🔴 v1.23 — A STRING, NOT A TYPED BLOB, AND THE REASON IS CORS.
+      //
+      // sendBeacon with `new Blob([json], { type: 'application/json' })` is a
+      // cross-origin request with a content type that is NOT CORS-safelisted,
+      // so the browser must preflight it. During unload the OPTIONS goes out
+      // and the page dies before the POST follows. MEASURED in rox-chat's HTTP
+      // log, 2026-09-14:
+      //
+      //     19:23:40  OPTIONS /api/booking/abandon  204     (no POST)
+      //     19:24:09  OPTIONS /api/booking/abandon  204     (no POST, a real
+      //                                                      customer on Android)
+      //     19:24:30  OPTIONS + POST 200   (same call from a page NOT unloading)
+      //
+      // sendBeacon returns true in every one of those cases — it reports that
+      // the browser QUEUED the request, never that it arrived. So this failed
+      // silently on both ends.
+      //
+      // A plain string sends Content-Type text/plain;charset=UTF-8, which IS
+      // safelisted: no preflight, no second round trip, nothing to lose the
+      // race with unload. The route parses text/plain as JSON to match.
+      //
+      // This was ALWAYS broken — the Blob predates v1.22. Fixing the inverted
+      // guard alone only moved the failure one layer down.
       try {
-        navigator.sendBeacon(
-          `${CONFIG.serverUrl}/api/booking/abandon`,
-          new Blob([payload], { type: 'application/json' })
-        );
+        navigator.sendBeacon(`${CONFIG.serverUrl}/api/booking/abandon`, payload);
       } catch (_) { /* a failed beacon must never break the page */ }
     }
 

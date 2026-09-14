@@ -287,7 +287,17 @@ router.post('/message', rateLimit, async (req, res) => {
 // ========================================
 // POST /api/chat/end — Chat closed/abandoned (proxy to engine)
 // ========================================
-router.post('/end', async (req, res) => {
+// 🔴 A BEACON ARRIVES AS text/plain, DELIBERATELY. navigator.sendBeacon must
+// use a CORS-safelisted content type or the browser preflights it, and on page
+// unload the OPTIONS completes while the POST never follows — silently, with
+// sendBeacon still returning true. So the widgets send a plain JSON STRING and
+// this route parses that content type as JSON. Scoped to this route only: a
+// global text/plain-as-JSON parser would 400 any other endpoint that ever
+// received plain text. express.json() is re-entrant-safe — it skips a request
+// the global parser already consumed.
+const beaconJson = express.json({ type: ['application/json', 'text/plain'], limit: '16kb' });
+
+router.post('/end', beaconJson, async (req, res) => {
   try {
     const { sessionId, reason } = req.body || {};
     if (!sessionId) return res.json({ ok: true });
