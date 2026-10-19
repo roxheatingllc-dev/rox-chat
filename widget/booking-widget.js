@@ -1,4 +1,18 @@
 /**
+ * ROX Booking Widget v1.24 - What we already know is not asked
+ *
+ * v1.24 Changes (2026-10-17, server v2.266.0):
+ *   - A known customer whose equipment age is on their HCP tags is not asked
+ *     "How old is your system?" — the server's /lookup-customer now returns
+ *     knownSystemAge ('3-10' or '10+'; never '0-2', which must still lead to
+ *     the ROX-installed warranty question). Skipped once, going forward only;
+ *     Back still shows the question.
+ *   - A Priority Comfort Club member booking maintenance is not asked "Are you
+ *     a Priority Comfort Club member?" — the lookup already knows. Straight to
+ *     cooling / heating. (Scott Scheider and Samuel Larsen, members, left this
+ *     page at the calendar on 10/16; the server now also shows members the
+ *     Club page's technicians.)
+ *
  * ROX Booking Widget v1.23 - The beacon actually arrives
  *
  * v1.23 Changes (2026-09-14):
@@ -2112,6 +2126,19 @@
   }
 
   function goToStep(step) {
+    // v1.24 — skip "How old is your system?" once when the age is on file.
+    if (step === STEPS.SYSTEM_AGE && state.data._knownAge && !state._ageAutoSkipped) {
+      state._ageAutoSkipped = true;
+      state.data.systemAge = state.data._knownAge;
+      state.currentStep = STEPS.CALENDAR;
+      state.error = null;
+      if (state.sessionId && !state._rescheduleMode) syncStep();
+      render();
+      const _after = () => loadAvailability();
+      updateSession({ serviceType: state.data.serviceType, customerType: state.data.customerType, systemAge: state.data.systemAge })
+        .then(_after, _after);
+      return;
+    }
     state.currentStep = step;
     state.error = null;
     if (state.sessionId && !state._rescheduleMode) syncStep();
@@ -2336,6 +2363,8 @@
         state.data.name = result.customer.name || '';
         state.data.email = result.customer.email || '';
         if (result.customer.address) { state.data.address = result.customer.address; }
+        // v1.24 — equipment age already on file (server v2.266.0)
+        state.data._knownAge = result.knownSystemAge || null;
         // Message flow: skip straight to message
         if (state.data.serviceType === 'message') {
           goToStep(STEPS.MESSAGE);
@@ -2343,6 +2372,13 @@
         }
         // Maintenance existing: go to PCC question
         if (state.data.serviceType === 'maintenance') {
+          // v1.24 — a member on file is not asked whether they are a member.
+          if (result.isPccMember) {
+            state.data.isPccMember = true;
+            state.path = 'pcc_existing';
+            goToStep(STEPS.PCC_TYPE);
+            return;
+          }
           goToStep(STEPS.PCC_ASK);
           return;
         }
