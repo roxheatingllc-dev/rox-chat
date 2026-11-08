@@ -201,7 +201,8 @@
       .nav-r { display: flex; align-items: center; width: 100%; padding: 0 24px; margin-bottom: 8px; }
       .bk-btn { width: 40px; height: 40px; border-radius: 50%; border: 2px solid #ccc; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #666; font-size: 20px; transition: all 0.2s; }
       .bk-btn:hover { border-color: #999; color: #333; }
-      .ir { display: flex; gap: 16px; width: 100%; max-width: 520px; margin-bottom: 24px; }
+      .ir { display: flex; gap: 16px; width: 100%; max-width: 520px; margin-bottom: 24px; flex-wrap: wrap; }
+      @media (max-width: 520px) { .ir > .inf { flex: 1 1 100% !important; min-width: 0; } .ar > .inf { flex: 1 1 100% !important; min-width: 0; } .ar { flex-wrap: wrap; } }
       .inf { flex: 1; padding: 16px 20px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px; font-family: 'DM Sans', sans-serif; transition: border-color 0.2s; outline: none; background: white; }
       .inf:focus { border-color: ${CONFIG.brandColor}; }
       .inf::placeholder { color: #999; }
