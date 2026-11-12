@@ -1,5 +1,18 @@
 /**
- * ROX Booking Widget v1.24 - What we already know is not asked
+ * ROX Booking Widget v1.25 - A member who is already scheduled is told so
+ *
+ * v1.25 Changes (2026-11-12, server v2.320.0):
+ *   - Angela Brunow (Priority Comfort Club) booked a Fall Furnace tune-up here
+ *     on 11/11 while her Club visit was already on the schedule for the next
+ *     day. The server caught it at /confirm and alerted the office, but she was
+ *     shown a normal confirmation. Now, when a member picks cooling / heating,
+ *     /update-session returns existingClubVisit and the widget shows "You're
+ *     already scheduled" (ALREADY_BOOKED) instead of the calendar, with three
+ *     choices: that's all I needed / I need a different time (message to the
+ *     office, pre-filled) / book another visit anyway (the old path, which the
+ *     server still flags as a possible duplicate).
+ *
+ * v1.24 - What we already know is not asked
  *
  * v1.24 Changes (2026-10-17, server v2.266.0):
  *   - A known customer whose equipment age is on their HCP tags is not asked
@@ -405,6 +418,7 @@
     WARRANTY_HANDOFF: 'warranty_handoff',
     DECLINED: 'declined',          // Shown when a service type is not supported
     REFERRAL: 'referral',          // v1.15 - out-of-area referral (GoodFellas). Reached via goToStep, not in any STEP_FLOW.
+    ALREADY_BOOKED: 'already_booked', // v1.25 - member's Club visit is already scheduled. Reached via goToStep, not in any STEP_FLOW.
     // ── v1.12 RESCHEDULE MODE STEPS ─────────────────────
     // These four are NEVER part of any STEP_FLOW. They are only reached
     // via the URL ?token=... entry path in init(). The progress bar is
@@ -946,6 +960,7 @@
       case STEPS.MESSAGE: return renderMessage();
       case STEPS.PCC_ASK: return renderPccAsk();
       case STEPS.PCC_TYPE: return renderPccType();
+      case STEPS.ALREADY_BOOKED: return renderAlreadyBooked();
       case STEPS.ADDRESS: return renderAddress();
       case STEPS.CONTACT_INFO: return renderContactInfo();
       case STEPS.CONFIRM: return renderConfirm();
@@ -1440,6 +1455,30 @@
       { value: 'heating', icon: '\uD83D\uDD25', label: 'Heating (Furnace)', desc: 'Furnace maintenance' }
     ];
     return `<div class="rxb-card"><div class="rxb-card-title">Which Maintenance?</div><div class="rxb-card-subtitle">Select the maintenance you'd like to schedule</div><div class="rxb-options">${options.map(o => `<button class="rxb-option-btn${state.data.pccType === o.value ? ' selected' : ''}" data-action="select-pcc-type" data-value="${o.value}"><div class="rxb-option-icon">${o.icon}</div><div><div class="rxb-option-label">${o.label}</div><div class="rxb-option-desc">${o.desc}</div></div></button>`).join('')}</div>${renderNav(true, false)}</div>`;
+  }
+
+  // v1.25 — the member's Club visit for this season is already on the schedule.
+  function renderAlreadyBooked() {
+    const C = THEME.colors;
+    const v = state.data.existingClubVisit || {};
+    const fn = state.data.firstName || (state.data.name ? state.data.name.split(/\s+/)[0] : '');
+    const what = state.data.pccType === 'cooling' ? 'A/C maintenance' : 'furnace maintenance';
+    if (state._alreadyBookedDone) {
+      return `<div class="rxb-card"><div class="rxb-success">`
+        + `<div class="rxb-success-icon">\u2713</div>`
+        + `<h3 style="color:${C.text}">See you then${fn ? ', ' + escapeHtml(fn) : ''}!</h3>`
+        + `<p style="color:${C.textSecondary}">Your ${what} is on ${escapeHtml(v.whenText || 'the schedule')}. You'll get a reminder before the visit.</p>`
+        + `<p style="margin-top:16px;font-size:13px;color:${C.textMuted}">Questions? Call us at <strong>${CONFIG.companyPhone}</strong></p>`
+        + `</div></div>`;
+    }
+    return `<div class="rxb-card"><div class="rxb-success">`
+      + `<div class="rxb-success-icon">\u2B50</div>`
+      + `<h3 style="color:${C.text}">You're Already Scheduled</h3>`
+      + `<p style="color:${C.textSecondary}">Good news${fn ? ', ' + escapeHtml(fn) : ''}! Your Priority Comfort Club ${what} is already on our schedule for <strong>${escapeHtml(v.whenText || 'an upcoming date')}</strong>. There's nothing else you need to do.</p>`
+      + `<button data-action="already-booked-done" style="margin-top:18px;padding:14px 28px;font-size:15px;font-weight:600;color:#fff;background:${C.primary};border:none;border-radius:10px;cursor:pointer;width:100%">Great, that's all I needed</button>`
+      + `<button data-action="already-booked-change" style="margin-top:10px;padding:12px 24px;font-size:14px;font-weight:600;color:${C.primary};background:none;border:1px solid ${C.primary};border-radius:10px;cursor:pointer;width:100%">I need a different time</button>`
+      + `<div style="margin-top:12px"><button data-action="already-booked-another" style="background:none;border:none;color:${C.textMuted};font-size:13px;cursor:pointer;text-decoration:underline">Book another visit anyway</button></div>`
+      + `</div></div>`;
   }
 
   function renderConfirm() {
@@ -2065,8 +2104,34 @@
         state.data.issue = value === 'cooling'
           ? 'PCC Annual Maintenance - Cooling (A/C)'
           : 'PCC Annual Maintenance - Heating (Furnace)';
-        await updateSession({ serviceType: 'maintenance', customerType: state.data.customerType, pccType: value, isPccMember: true });
+        {
+          const _r = await updateSession({ serviceType: 'maintenance', customerType: state.data.customerType, pccType: value, isPccMember: true });
+          // v1.25 — this season's Club visit is already booked: say so, don't open the calendar.
+          if (_r && _r.existingClubVisit && _r.existingClubVisit.whenText) {
+            state.data.existingClubVisit = _r.existingClubVisit;
+            state._alreadyBookedDone = false;
+            goToStep(STEPS.ALREADY_BOOKED);
+            break;
+          }
+        }
         goToStep(STEPS.SYSTEM_AGE); // Ask system age for proper tech routing
+        break;
+      // ── v1.25 ALREADY-SCHEDULED ACTIONS ─────────────────────────
+      case 'already-booked-done':
+        state._alreadyBookedDone = true;
+        render();
+        break;
+      case 'already-booked-change': {
+        const _when = (state.data.existingClubVisit && state.data.existingClubVisit.whenText) || 'my scheduled date';
+        state.data.serviceType = 'message';
+        state.data.message = `I already have my Priority Comfort Club ${state.data.pccType === 'cooling' ? 'A/C' : 'furnace'} maintenance scheduled for ${_when}, but I need a different time. Please contact me to reschedule.`;
+        state.path = state.data.customer ? 'message_existing' : 'message_new';
+        goToStep(state.data.customer || (state.data.name && state.data.phone) ? STEPS.MESSAGE : STEPS.CONTACT_INFO);
+        break;
+      }
+      case 'already-booked-another':
+        await updateSession({ bookingAnotherClubVisit: true });
+        goToStep(STEPS.SYSTEM_AGE);
         break;
       case 'book-further-out':
         // Switch to message flow — pre-fill with scheduling request context
