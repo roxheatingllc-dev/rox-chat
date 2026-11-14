@@ -1,5 +1,13 @@
 /**
- * ROX Booking Widget v1.25 - A member who is already scheduled is told so
+ * ROX Booking Widget v1.26 - The "ROX Install" tag answers the warranty question
+ *
+ * v1.26 Changes (2026-11-14, server v2.329.0):
+ *   - Jason: the new "ROX Install" customer tag is how we know for sure ROX
+ *     installed the equipment. /lookup-customer now returns roxInstallOnFile;
+ *     a tagged customer who picks 0–2 years is not asked "Did ROX install
+ *     it?" — the widget answers yes for them and goes to the warranty handoff.
+ *
+ * v1.25 - A member who is already scheduled is told so
  *
  * v1.25 Changes (2026-11-12, server v2.320.0):
  *   - Angela Brunow (Priority Comfort Club) booked a Fall Furnace tune-up here
@@ -1958,7 +1966,10 @@
         await updateSession({ serviceType: state.data.serviceType, customerType: state.data.customerType, systemAge: value });
         // 0-2 year systems: ask if ROX installed before showing calendar
         // ROX installed = potential warranty = team handoff (no AI scheduling)
-        if (value === '0-2') {
+        if (value === '0-2' && state.data._roxInstallOnFile) {
+          // v1.26 — the tag already says ROX installed it: no question.
+          await handleRoxInstalledAction('yes');
+        } else if (value === '0-2') {
           goToStep(STEPS.ROX_INSTALLED);
         } else {
           goToStep(STEPS.CALENDAR);
@@ -2430,6 +2441,8 @@
         if (result.customer.address) { state.data.address = result.customer.address; }
         // v1.24 — equipment age already on file (server v2.266.0)
         state.data._knownAge = result.knownSystemAge || null;
+        // v1.26 — the "ROX Install" tag on the customer (server v2.329.0)
+        state.data._roxInstallOnFile = result.roxInstallOnFile === true;
         // Message flow: skip straight to message
         if (state.data.serviceType === 'message') {
           goToStep(STEPS.MESSAGE);
