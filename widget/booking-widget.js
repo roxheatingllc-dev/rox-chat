@@ -1,5 +1,18 @@
 /**
- * ROX Booking Widget v1.26 - The "ROX Install" tag answers the warranty question
+ * ROX Booking Widget v1.27 - A down system is not shown a date a month away
+ *
+ * v1.27 Changes (2026-11-16, server v2.333.0):
+ *   - Session 12d7ddcb (Mon 11/16 06:20): a repair on a 10+ year system was
+ *     shown Dec 17 — 31 days out — as its first opening, and the customer left
+ *     20 seconds later. Phone and chat hand a down system to the office
+ *     instead (server v2.323.0, Kim). When /availability returns soonerHelp
+ *     (a repair whose first opening is more than 3 days out) the calendar
+ *     opens with "Our first opening online is Thu, Dec 17. Is your system not
+ *     working at all?" and a "My system is down — call me" button. It posts
+ *     /urgent-callback (urgent office alert; OPPORTUNITY CALL for 10+ yr) and
+ *     shows when the office will call. The calendar stays available.
+ *
+ * v1.26 - The "ROX Install" tag answers the warranty question
  *
  * v1.26 Changes (2026-11-14, server v2.329.0):
  *   - Jason: the new "ROX Install" customer tag is how we know for sure ROX
@@ -1242,6 +1255,28 @@
       return `<div class="rxb-card"><div class="rxb-card-title">Pick a Date & Time</div>${pricingHtml}${errorHtml}<div style="text-align:center; padding: 30px 0;"><p style="font-size: 16px; margin-bottom: 12px;">No available times found in the next 4 weeks.</p><p style="font-size: 14px; color: ${THEME.colors.textSecondary}; margin-bottom: 20px;">Please call us at <strong>${CONFIG.companyPhone}</strong> and we'll find a time that works.</p><button class="rxb-next-btn" style="width:100%" data-action="book-further-out">\uD83D\uDCE9 Send a Request for a Later Date</button></div>${renderNav(true, false)}</div>`;
     }
 
+    // v1.27 — the customer asked the office to call: say when, and offer the calendar anyway.
+    const sooner = state.availability.soonerHelp;
+    if (state._soonerSent && !state._soonerShowCal) {
+      const C = THEME.colors;
+      const fn = state.data.firstName || (state.data.name ? state.data.name.split(/\s+/)[0] : '');
+      return `<div class="rxb-card"><div class="rxb-success">`
+        + `<div class="rxb-success-icon">\u2713</div>`
+        + `<h3 style="color:${C.text}">We're On It${fn ? ', ' + escapeHtml(fn) : ''}!</h3>`
+        + `<p style="color:${C.textSecondary}">${escapeHtml(state._soonerSent)}</p>`
+        + `<p style="margin-top:12px;font-size:14px;color:${C.textSecondary}">Questions? Call us at <strong>${CONFIG.companyPhone}</strong>.</p>`
+        + `<div style="margin-top:12px"><button data-action="sooner-show-calendar" style="background:none;border:none;color:${C.textMuted};font-size:13px;cursor:pointer;text-decoration:underline">I'd still like to pick a date</button></div>`
+        + `</div></div>`;
+    }
+    const soonerHtml = (sooner && !state._soonerSent)
+      ? `<div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:10px;padding:14px 16px;margin-bottom:14px;color:#7F1D1D;">`
+        + `<div style="font-size:15px;font-weight:700;margin-bottom:6px;">\uD83D\uDD25 Is your system not working at all?</div>`
+        + `<div style="font-size:14px;margin-bottom:12px;">Our first opening online is <strong>${escapeHtml(sooner.displayDate || '')}</strong>. If you have no heat, no cooling, or a leaking water heater, don't wait \u2014 our office will call you to get you in sooner.</div>`
+        + `<button data-action="sooner-call" style="width:100%;padding:12px 16px;font-size:15px;font-weight:700;color:#fff;background:#DC2626;border:none;border-radius:8px;cursor:pointer;">My system is down \u2014 call me</button>`
+        + `<div style="font-size:12px;margin-top:8px;color:#991B1B;text-align:center;">Or pick a date below.</div>`
+        + `</div>`
+      : '';
+
     const availDates = new Set(state.availability.availableDays.map(d => d.date));
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -1344,7 +1379,7 @@
 
     const furtherOutHtml = `<div style="text-align:center; margin-top:16px; padding-top:12px; border-top:1px solid ${THEME.colors.cardBorder};">${canNext ? `<button data-action="cal-next" style="display:inline-flex; align-items:center; gap:6px; padding:10px 24px; background:${THEME.colors.primaryLight}; border:1.5px solid ${THEME.colors.primaryBorder}; border-radius:8px; color:${THEME.colors.primary}; font-size:14px; font-weight:600; cursor:pointer; margin-bottom:12px; transition:all 0.2s ease;">View More Dates \u2192</button><br>` : ''}<button data-action="book-further-out" style="background:none; border:none; color:${THEME.colors.textMuted}; font-size:13px; cursor:pointer; padding:8px 0;">Need to book further out? Send us a request \u2192</button></div>`;
     const pricingHtml = getPricingBanner();
-    return `<div class="rxb-card"><div class="rxb-card-title">Pick a Date & Time</div><div class="rxb-card-subtitle">Select an available day, then choose a time slot</div>${pricingHtml}${errorHtml}<div class="rxb-calendar"><div class="rxb-cal-header"><button class="rxb-cal-nav-btn" data-action="cal-prev" ${!canPrev ? 'disabled' : ''}>\u2039</button><div class="rxb-cal-title">${monthName}</div><button class="rxb-cal-nav-btn" data-action="cal-next" ${!canNext ? 'disabled' : ''}>\u203A</button></div><div class="rxb-cal-grid">${daysHtml}</div></div>${slotsHtml}${furtherOutHtml}${renderNav(true, !!state.data.selectedSlot)}</div>`;
+    return `<div class="rxb-card"><div class="rxb-card-title">Pick a Date & Time</div><div class="rxb-card-subtitle">Select an available day, then choose a time slot</div>${soonerHtml}${pricingHtml}${errorHtml}<div class="rxb-calendar"><div class="rxb-cal-header"><button class="rxb-cal-nav-btn" data-action="cal-prev" ${!canPrev ? 'disabled' : ''}>\u2039</button><div class="rxb-cal-title">${monthName}</div><button class="rxb-cal-nav-btn" data-action="cal-next" ${!canNext ? 'disabled' : ''}>\u203A</button></div><div class="rxb-cal-grid">${daysHtml}</div></div>${slotsHtml}${furtherOutHtml}${renderNav(true, !!state.data.selectedSlot)}</div>`;
   }
 
   // ── v1.19 — ESTIMATE SUBJECT ─────────────────────────────────────────────
@@ -2143,6 +2178,25 @@
       case 'already-booked-another':
         await updateSession({ bookingAnotherClubVisit: true });
         goToStep(STEPS.SYSTEM_AGE);
+        break;
+      // ── v1.27 "MY SYSTEM IS DOWN — CALL ME" ─────────────────────
+      case 'sooner-call': {
+        if (state._soonerBusy) break;
+        state._soonerBusy = true; state.error = null; render();
+        try {
+          const r = await api('POST', '/urgent-callback', { sessionId: state.sessionId, issue: state.data.issue || '' });
+          state._soonerSent = (r && r.callbackText) || 'Our office will call you to get you in sooner.';
+          state._soonerShowCal = false;
+        } catch (err) {
+          state.error = 'We could not send that. Please call us at ' + CONFIG.companyPhone + ' and we\u2019ll get you in as soon as we can.';
+        }
+        state._soonerBusy = false;
+        render();
+        break;
+      }
+      case 'sooner-show-calendar':
+        state._soonerShowCal = true;
+        render();
         break;
       case 'book-further-out':
         // Switch to message flow — pre-fill with scheduling request context
