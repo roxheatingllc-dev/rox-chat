@@ -1,5 +1,12 @@
 /**
- * ROX Booking Widget v1.28 - Priority visit for 10+ yr systems; waitlist; where people leave
+ * ROX Booking Widget v1.29 - The leave beacon says what they picked
+ *
+ * v1.29 Changes (2026-11-18, server v2.340.0):
+ *   - The first funnel lines read "service=-" for a visitor who had picked a
+ *     service: the widget only sends it to the server at the calendar. The
+ *     leave beacon now carries serviceType and customerType too.
+ *
+ * v1.28 - Priority visit for 10+ yr systems; waitlist; where people leave
  *
  * v1.28 Changes (2026-11-18, server v2.339.0):
  *   - Jason: "10+-year-old system should never be offered such a far out date.
@@ -3373,7 +3380,8 @@
       if (_abandonSignalled) return;
       if (!state.sessionId || state.currentStep === STEPS.SUCCESS) return;
       _abandonSignalled = true;
-      const payload = JSON.stringify({ sessionId: state.sessionId, reason: reason, step: state.currentStep });   // v1.28 — where they left
+      const payload = JSON.stringify({ sessionId: state.sessionId, reason: reason, step: state.currentStep,   // v1.28 — where they left
+        serviceType: state.data.serviceType || '', customerType: state.data.customerType || '' });          // v1.29 — what they picked before leaving
       // 🔴 v1.23 — A STRING, NOT A TYPED BLOB, AND THE REASON IS CORS.
       //
       // sendBeacon with `new Blob([json], { type: 'application/json' })` is a
