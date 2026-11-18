@@ -1,5 +1,20 @@
 /**
- * ROX Booking Widget v1.27 - A down system is not shown a date a month away
+ * ROX Booking Widget v1.28 - Priority visit for 10+ yr systems; waitlist; where people leave
+ *
+ * v1.28 Changes (2026-11-18, server v2.339.0):
+ *   - Jason: "10+-year-old system should never be offered such a far out date.
+ *     They should be offered same-day booking just like AI voice would do."
+ *     When /availability returns priorityVisit, the calendar holds ONE priority
+ *     visit (the voice window: today 12–4, today 8–12, next business day 8–12;
+ *     Monday from Saturday noon), with a banner saying the office will call to
+ *     confirm the arrival time. It is booked unassigned, like voice.
+ *   - waitlistOffer (maintenance / estimate, first opening 7+ days out): "Want
+ *     us to call you if something opens sooner?" → POST /waitlist. The calendar
+ *     stays usable to hold a spot.
+ *   - The leave beacon now carries the current step, so the server can log
+ *     where every visitor left ([BookingFunnel]).
+ *
+ * v1.27 - A down system is not shown a date a month away
  *
  * v1.27 Changes (2026-11-16, server v2.333.0):
  *   - Session 12d7ddcb (Mon 11/16 06:20): a repair on a 10+ year system was
@@ -1268,6 +1283,24 @@
         + `<div style="margin-top:12px"><button data-action="sooner-show-calendar" style="background:none;border:none;color:${C.textMuted};font-size:13px;cursor:pointer;text-decoration:underline">I'd still like to pick a date</button></div>`
         + `</div></div>`;
     }
+    // v1.28 — the priority visit (10+ yr system down) and the waitlist.
+    const prio = state.availability.priorityVisit;
+    const prioHtml = prio
+      ? `<div style="background:#ECFDF5;border:1px solid #6EE7B7;border-radius:10px;padding:14px 16px;margin-bottom:14px;color:#065F46;">`
+        + `<div style="font-size:15px;font-weight:700;margin-bottom:6px;">\u26A1 Priority visit for your system</div>`
+        + `<div style="font-size:14px;">Because your system is 10+ years old and not working, we've set aside a priority visit for <strong>${escapeHtml(prio.label || '')}</strong>. Pick it below \u2014 our office will call you to confirm your exact arrival time.</div>`
+        + `</div>`
+      : '';
+    const wait = state.availability.waitlistOffer;
+    const waitHtml = wait
+      ? (state._waitlistText
+        ? `<div style="background:#EFF6FF;border:1px solid #93C5FD;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:14px;color:#1E3A8A;">\u2713 ${escapeHtml(state._waitlistText)}</div>`
+        : `<div style="background:#EFF6FF;border:1px solid #93C5FD;border-radius:10px;padding:14px 16px;margin-bottom:14px;color:#1E3A8A;">`
+          + `<div style="font-size:14px;margin-bottom:10px;">Our first opening online is <strong>${escapeHtml(wait.displayDate || '')}</strong>. Want us to call you if something opens up sooner?</div>`
+          + `<button data-action="join-waitlist" style="width:100%;padding:11px 16px;font-size:14px;font-weight:700;color:#fff;background:#2563EB;border:none;border-radius:8px;cursor:pointer;">Yes \u2014 call me if something opens sooner</button>`
+          + `<div style="font-size:12px;margin-top:8px;text-align:center;">You can still pick a date below to hold your spot.</div>`
+          + `</div>`)
+      : '';
     const soonerHtml = (sooner && !state._soonerSent)
       ? `<div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:10px;padding:14px 16px;margin-bottom:14px;color:#7F1D1D;">`
         + `<div style="font-size:15px;font-weight:700;margin-bottom:6px;">\uD83D\uDD25 Is your system not working at all?</div>`
@@ -1379,7 +1412,7 @@
 
     const furtherOutHtml = `<div style="text-align:center; margin-top:16px; padding-top:12px; border-top:1px solid ${THEME.colors.cardBorder};">${canNext ? `<button data-action="cal-next" style="display:inline-flex; align-items:center; gap:6px; padding:10px 24px; background:${THEME.colors.primaryLight}; border:1.5px solid ${THEME.colors.primaryBorder}; border-radius:8px; color:${THEME.colors.primary}; font-size:14px; font-weight:600; cursor:pointer; margin-bottom:12px; transition:all 0.2s ease;">View More Dates \u2192</button><br>` : ''}<button data-action="book-further-out" style="background:none; border:none; color:${THEME.colors.textMuted}; font-size:13px; cursor:pointer; padding:8px 0;">Need to book further out? Send us a request \u2192</button></div>`;
     const pricingHtml = getPricingBanner();
-    return `<div class="rxb-card"><div class="rxb-card-title">Pick a Date & Time</div><div class="rxb-card-subtitle">Select an available day, then choose a time slot</div>${soonerHtml}${pricingHtml}${errorHtml}<div class="rxb-calendar"><div class="rxb-cal-header"><button class="rxb-cal-nav-btn" data-action="cal-prev" ${!canPrev ? 'disabled' : ''}>\u2039</button><div class="rxb-cal-title">${monthName}</div><button class="rxb-cal-nav-btn" data-action="cal-next" ${!canNext ? 'disabled' : ''}>\u203A</button></div><div class="rxb-cal-grid">${daysHtml}</div></div>${slotsHtml}${furtherOutHtml}${renderNav(true, !!state.data.selectedSlot)}</div>`;
+    return `<div class="rxb-card"><div class="rxb-card-title">Pick a Date & Time</div><div class="rxb-card-subtitle">Select an available day, then choose a time slot</div>${prioHtml}${waitHtml}${soonerHtml}${pricingHtml}${errorHtml}<div class="rxb-calendar"><div class="rxb-cal-header"><button class="rxb-cal-nav-btn" data-action="cal-prev" ${!canPrev ? 'disabled' : ''}>\u2039</button><div class="rxb-cal-title">${monthName}</div><button class="rxb-cal-nav-btn" data-action="cal-next" ${!canNext ? 'disabled' : ''}>\u203A</button></div><div class="rxb-cal-grid">${daysHtml}</div></div>${slotsHtml}${furtherOutHtml}${renderNav(true, !!state.data.selectedSlot)}</div>`;
   }
 
   // ── v1.19 — ESTIMATE SUBJECT ─────────────────────────────────────────────
@@ -2191,6 +2224,19 @@
           state.error = 'We could not send that. Please call us at ' + CONFIG.companyPhone + ' and we\u2019ll get you in as soon as we can.';
         }
         state._soonerBusy = false;
+        render();
+        break;
+      }
+      case 'join-waitlist': {   // v1.28
+        if (state._waitlistBusy) break;
+        state._waitlistBusy = true; state.error = null; render();
+        try {
+          const r = await api('POST', '/waitlist', { sessionId: state.sessionId });
+          state._waitlistText = (r && r.text) || "You're on the list! We'll call you if something sooner opens up.";
+        } catch (err) {
+          state.error = 'We could not add you to the list. Please call us at ' + CONFIG.companyPhone + '.';
+        }
+        state._waitlistBusy = false;
         render();
         break;
       }
@@ -3327,7 +3373,7 @@
       if (_abandonSignalled) return;
       if (!state.sessionId || state.currentStep === STEPS.SUCCESS) return;
       _abandonSignalled = true;
-      const payload = JSON.stringify({ sessionId: state.sessionId, reason: reason });
+      const payload = JSON.stringify({ sessionId: state.sessionId, reason: reason, step: state.currentStep });   // v1.28 — where they left
       // 🔴 v1.23 — A STRING, NOT A TYPED BLOB, AND THE REASON IS CORS.
       //
       // sendBeacon with `new Blob([json], { type: 'application/json' })` is a
