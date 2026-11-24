@@ -1,5 +1,12 @@
 /**
- * ROX Booking Widget v1.29 - The leave beacon says what they picked
+ * ROX Booking Widget v1.30 - The priority visit for 10+ yr maintenance / estimates
+ *
+ * v1.30 Changes (2026-11-24, server v2.343.0):
+ *   - Rob Jaecks (11-yr furnace, maintenance) was shown Dec 23. The server now
+ *     gives 10+ yr maintenance and estimates the priority visit too. Its banner
+ *     only says "and not working" for repairs (priorityVisit.reason === 'down').
+ *
+ * v1.29 - The leave beacon says what they picked
  *
  * v1.29 Changes (2026-11-18, server v2.340.0):
  *   - The first funnel lines read "service=-" for a visitor who had picked a
@@ -1295,7 +1302,8 @@
     const prioHtml = prio
       ? `<div style="background:#ECFDF5;border:1px solid #6EE7B7;border-radius:10px;padding:14px 16px;margin-bottom:14px;color:#065F46;">`
         + `<div style="font-size:15px;font-weight:700;margin-bottom:6px;">\u26A1 Priority visit for your system</div>`
-        + `<div style="font-size:14px;">Because your system is 10+ years old and not working, we've set aside a priority visit for <strong>${escapeHtml(prio.label || '')}</strong>. Pick it below \u2014 our office will call you to confirm your exact arrival time.</div>`
+        // v1.30 — maintenance / estimates on a 10+ yr system get it too; only repairs say "not working".
+        + `<div style="font-size:14px;">Because your system is 10+ years old${prio.reason === 'aged' ? '' : ' and not working'}, we've set aside a priority visit for <strong>${escapeHtml(prio.label || '')}</strong>. Pick it below \u2014 our office will call you to confirm your exact arrival time.</div>`
         + `</div>`
       : '';
     const wait = state.availability.waitlistOffer;
