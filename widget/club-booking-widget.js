@@ -1,5 +1,8 @@
 /**
- * ROX Club Booking Widget v1.0.10
+ * ROX Club Booking Widget v1.0.11
+ *   - v1.0.11 (2026-11-24): Air filter notice on the success screen. Jason:
+ *     the customer must have an air filter ready — the tech changes it,
+ *     ROX does not provide them.
  *   - v1.0.10 (2026-05-18): Optional campaign cutoff. The widget no longer
  *     assumes a fixed cutoff date is always present — when the server's
  *     /start response returns campaign.cutoffDate === null (the new
@@ -1184,6 +1187,10 @@
         <div class="rcb-summary-row">${escapeHtml(c.address || '')}</div>
       </div>
       <p class="rcb-p">${escapeHtml(c.priceText || 'Included in your membership.')}</p>
+      <div style="margin: 16px 0; background:#FFFBEB; border:1px solid #FCD34D; border-radius:10px; padding:14px 16px; color:#78350F;">
+        <div style="font-size:15px; font-weight:700; margin-bottom:6px;">\uD83D\uDCCC Please have a new air filter ready</div>
+        <div style="font-size:14px;">Our technician will change your air filter during the visit, but we don\u2019t provide filters. Please have one on hand \u2014 the size is printed on the edge of your current filter.</div>
+      </div>
       <p class="rcb-muted">
         We'll send a reminder before your appointment. If the weather forecast doesn't
         cooperate, our office will reach out to reschedule. Questions?

@@ -1,5 +1,13 @@
 /**
- * ROX Booking Widget v1.30 - 10+ yr maintenance: "Is your furnace not working?"
+ * ROX Booking Widget v1.31 - Air filter notice after a maintenance / service booking
+ *
+ * v1.31 Changes (2026-11-24):
+ *   - Jason: after maintenance or service is scheduled the customer must be
+ *     told to have an air filter ready — the tech changes it, ROX does not
+ *     provide them. Shown on the success screen for maintenance and repair
+ *     (not estimates or messages).
+ *
+ * v1.30 - 10+ yr maintenance: "Is your furnace not working?"
  *
  * v1.30 Changes (2026-11-24, server v2.343.0):
  *   - Rob Jaecks (11-yr furnace, Club maintenance) was shown Dec 23 and left.
@@ -1630,7 +1638,15 @@
       return `<div class="rxb-card"><div class="rxb-success"><div class="rxb-success-icon">\u2709</div><h3>Message Sent!</h3><p>Your message has been delivered to our office.</p><p style="margin-top:12px; font-size:14px; color:${THEME.colors.textSecondary}">Someone from our team will follow up with you soon.</p><p style="margin-top:24px; font-size:13px; color:${THEME.colors.textMuted}">Questions? Call us at <strong>${CONFIG.companyPhone}</strong></p></div></div>`;
     }
     // Booking success
-    return `<div class="rxb-card"><div class="rxb-success"><div class="rxb-success-icon">\u2714</div><h3>You're All Set!</h3><p>Your appointment has been confirmed.</p>${c ? `<div style="margin-top:20px; text-align:left;"><div class="rxb-summary"><div class="rxb-summary-row"><span class="rxb-summary-label">Service</span><span class="rxb-summary-value">${escapeHtml(c.service)}</span></div><div class="rxb-summary-row"><span class="rxb-summary-label">Date</span><span class="rxb-summary-value">${escapeHtml(c.date)}</span></div><div class="rxb-summary-row"><span class="rxb-summary-label">Time</span><span class="rxb-summary-value">${escapeHtml(c.time)}</span></div></div></div>` : ''}<p style="margin-top:24px; font-size:13px; color:${THEME.colors.textMuted}">Questions? Call us at <strong>${CONFIG.companyPhone}</strong></p></div></div>`;
+    // v1.31 — maintenance and service calls: the customer supplies the air filter.
+    const needsFilter = state.data.serviceType === 'maintenance' || state.data.serviceType === 'repair';
+    const filterHtml = needsFilter
+      ? `<div style="margin-top:20px;text-align:left;background:#FFFBEB;border:1px solid #FCD34D;border-radius:10px;padding:14px 16px;color:#78350F;">`
+        + `<div style="font-size:15px;font-weight:700;margin-bottom:6px;">\uD83D\uDCCC Please have a new air filter ready</div>`
+        + `<div style="font-size:14px;">Our technician will change your air filter during the visit, but we don\u2019t provide filters. Please have one on hand \u2014 the size is printed on the edge of your current filter.</div>`
+        + `</div>`
+      : '';
+    return `<div class="rxb-card"><div class="rxb-success"><div class="rxb-success-icon">\u2714</div><h3>You're All Set!</h3><p>Your appointment has been confirmed.</p>${c ? `<div style="margin-top:20px; text-align:left;"><div class="rxb-summary"><div class="rxb-summary-row"><span class="rxb-summary-label">Service</span><span class="rxb-summary-value">${escapeHtml(c.service)}</span></div><div class="rxb-summary-row"><span class="rxb-summary-label">Date</span><span class="rxb-summary-value">${escapeHtml(c.date)}</span></div><div class="rxb-summary-row"><span class="rxb-summary-label">Time</span><span class="rxb-summary-value">${escapeHtml(c.time)}</span></div></div></div>` : ''}${filterHtml}<p style="margin-top:24px; font-size:13px; color:${THEME.colors.textMuted}">Questions? Call us at <strong>${CONFIG.companyPhone}</strong></p></div></div>`;
   }
 
   function renderNav(showBack, showNext) {
