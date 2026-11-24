@@ -1,10 +1,15 @@
 /**
- * ROX Booking Widget v1.30 - The priority visit for 10+ yr maintenance / estimates
+ * ROX Booking Widget v1.30 - 10+ yr maintenance: "Is your furnace not working?"
  *
  * v1.30 Changes (2026-11-24, server v2.343.0):
- *   - Rob Jaecks (11-yr furnace, maintenance) was shown Dec 23. The server now
- *     gives 10+ yr maintenance and estimates the priority visit too. Its banner
- *     only says "and not working" for repairs (priorityVisit.reason === 'down').
+ *   - Rob Jaecks (11-yr furnace, Club maintenance) was shown Dec 23 and left.
+ *     Jason: maintenance does not get same-day; ask "Is your furnace not
+ *     working? You will need a service call and not maintenance". When
+ *     /availability returns notWorkingCheck, the calendar shows that question.
+ *     Yes → the server switches the booking to a service call (and drops the
+ *     Club plan), the widget follows (serviceType 'repair', repair flow) and
+ *     reloads the calendar, which then holds the same-day priority visit.
+ *     No → the normal calendar (and the waitlist offer).
  *
  * v1.29 - The leave beacon says what they picked
  *
@@ -1302,11 +1307,21 @@
     const prioHtml = prio
       ? `<div style="background:#ECFDF5;border:1px solid #6EE7B7;border-radius:10px;padding:14px 16px;margin-bottom:14px;color:#065F46;">`
         + `<div style="font-size:15px;font-weight:700;margin-bottom:6px;">\u26A1 Priority visit for your system</div>`
-        // v1.30 — maintenance / estimates on a 10+ yr system get it too; only repairs say "not working".
-        + `<div style="font-size:14px;">Because your system is 10+ years old${prio.reason === 'aged' ? '' : ' and not working'}, we've set aside a priority visit for <strong>${escapeHtml(prio.label || '')}</strong>. Pick it below \u2014 our office will call you to confirm your exact arrival time.</div>`
+        + `<div style="font-size:14px;">Because your system is 10+ years old and not working, we've set aside a priority visit for <strong>${escapeHtml(prio.label || '')}</strong>. Pick it below \u2014 our office will call you to confirm your exact arrival time.</div>`
         + `</div>`
       : '';
-    const wait = state.availability.waitlistOffer;
+    // v1.30 — 10+ yr maintenance: "Is your furnace not working?" (waitlist waits for the answer)
+    const nw = state.availability.notWorkingCheck;
+    const nwPending = !!nw && !state._nwAnswered;
+    const nwHtml = nwPending
+      ? `<div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:10px;padding:14px 16px;margin-bottom:14px;color:#7F1D1D;">`
+        + `<div style="font-size:15px;font-weight:700;margin-bottom:6px;">${escapeHtml(nw.question || 'Is your system not working?')}</div>`
+        + `<div style="font-size:14px;margin-bottom:12px;">${escapeHtml(nw.explain || '')}</div>`
+        + `<button data-action="nw-yes" ${state._nwBusy ? 'disabled' : ''} style="width:100%;padding:12px 16px;font-size:15px;font-weight:700;color:#fff;background:#DC2626;border:none;border-radius:8px;cursor:pointer;margin-bottom:8px;">Yes \u2014 it's not working</button>`
+        + `<button data-action="nw-no" ${state._nwBusy ? 'disabled' : ''} style="width:100%;padding:11px 16px;font-size:14px;font-weight:600;color:#7F1D1D;background:#fff;border:1px solid #FCA5A5;border-radius:8px;cursor:pointer;">No \u2014 it's working, I just need maintenance</button>`
+        + `</div>`
+      : '';
+    const wait = nwPending ? null : state.availability.waitlistOffer;
     const waitHtml = wait
       ? (state._waitlistText
         ? `<div style="background:#EFF6FF;border:1px solid #93C5FD;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:14px;color:#1E3A8A;">\u2713 ${escapeHtml(state._waitlistText)}</div>`
@@ -1427,7 +1442,7 @@
 
     const furtherOutHtml = `<div style="text-align:center; margin-top:16px; padding-top:12px; border-top:1px solid ${THEME.colors.cardBorder};">${canNext ? `<button data-action="cal-next" style="display:inline-flex; align-items:center; gap:6px; padding:10px 24px; background:${THEME.colors.primaryLight}; border:1.5px solid ${THEME.colors.primaryBorder}; border-radius:8px; color:${THEME.colors.primary}; font-size:14px; font-weight:600; cursor:pointer; margin-bottom:12px; transition:all 0.2s ease;">View More Dates \u2192</button><br>` : ''}<button data-action="book-further-out" style="background:none; border:none; color:${THEME.colors.textMuted}; font-size:13px; cursor:pointer; padding:8px 0;">Need to book further out? Send us a request \u2192</button></div>`;
     const pricingHtml = getPricingBanner();
-    return `<div class="rxb-card"><div class="rxb-card-title">Pick a Date & Time</div><div class="rxb-card-subtitle">Select an available day, then choose a time slot</div>${prioHtml}${waitHtml}${soonerHtml}${pricingHtml}${errorHtml}<div class="rxb-calendar"><div class="rxb-cal-header"><button class="rxb-cal-nav-btn" data-action="cal-prev" ${!canPrev ? 'disabled' : ''}>\u2039</button><div class="rxb-cal-title">${monthName}</div><button class="rxb-cal-nav-btn" data-action="cal-next" ${!canNext ? 'disabled' : ''}>\u203A</button></div><div class="rxb-cal-grid">${daysHtml}</div></div>${slotsHtml}${furtherOutHtml}${renderNav(true, !!state.data.selectedSlot)}</div>`;
+    return `<div class="rxb-card"><div class="rxb-card-title">Pick a Date & Time</div><div class="rxb-card-subtitle">Select an available day, then choose a time slot</div>${prioHtml}${nwHtml}${waitHtml}${soonerHtml}${pricingHtml}${errorHtml}<div class="rxb-calendar"><div class="rxb-cal-header"><button class="rxb-cal-nav-btn" data-action="cal-prev" ${!canPrev ? 'disabled' : ''}>\u2039</button><div class="rxb-cal-title">${monthName}</div><button class="rxb-cal-nav-btn" data-action="cal-next" ${!canNext ? 'disabled' : ''}>\u203A</button></div><div class="rxb-cal-grid">${daysHtml}</div></div>${slotsHtml}${furtherOutHtml}${renderNav(true, !!state.data.selectedSlot)}</div>`;
   }
 
   // ── v1.19 — ESTIMATE SUBJECT ─────────────────────────────────────────────
@@ -2242,6 +2257,34 @@
         render();
         break;
       }
+      // ── v1.30 "IS YOUR FURNACE NOT WORKING?" (10+ yr maintenance) ─────
+      case 'nw-yes': {
+        if (state._nwBusy) break;
+        state._nwBusy = true; state.error = null; render();
+        // The server switches first (it checks this IS a maintenance booking and
+        // clears the Club plan). Then the widget follows, because loadAvailability()
+        // re-sends serviceType / pccType from this state.
+        const r = await updateSession({ switchedFromMaintenance: true });
+        state._nwBusy = false;
+        if (!r) {
+          state.error = 'Something went wrong. Please call us at ' + CONFIG.companyPhone + ' and we\u2019ll get you in as soon as we can.';
+          render();
+          break;
+        }
+        state._nwAnswered = true;
+        state.data.serviceType = 'repair';
+        state.data.pccType = null;
+        if (/^PCC Annual Maintenance/.test(state.data.issue || '')) state.data.issue = '';   // they describe the problem next
+        state.data.selectedDate = null; state.data.selectedSlot = null;
+        state.path = pathFor('repair', state.data.customerType);
+        state.availability = null;
+        loadAvailability();
+        break;
+      }
+      case 'nw-no':
+        state._nwAnswered = true;
+        render();
+        break;
       case 'join-waitlist': {   // v1.28
         if (state._waitlistBusy) break;
         state._waitlistBusy = true; state.error = null; render();
