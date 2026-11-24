@@ -55,6 +55,27 @@ function officeEquipmentRow(tierLabel, tierColor, name, stage, monthly, seer2, h
     '</td></tr>';
 }
 
+// In-memory lead status tracking (tracks whether customer booked after viewing quote)
+const leadStatus = new Map();
+
+// POST /api/quote-lead/status — called when customer books (or leaves without booking)
+router.post('/status', async (req, res) => {
+  try {
+    const { leadId, status, bookedSlot, bookedTier } = req.body;
+    if (leadId && leadStatus.has(leadId)) {
+      const existing = leadStatus.get(leadId);
+      existing.status = status || 'booked';
+      existing.bookedSlot = bookedSlot;
+      existing.bookedTier = bookedTier;
+      existing.bookedAt = new Date().toISOString();
+      console.log('[quote-lead] Lead status updated:', leadId, status);
+    }
+    res.json({ success: true });
+  } catch (e) {
+    res.json({ success: true });
+  }
+});
+
 router.post('/', async (req, res) => {
   try {
     const lead = req.body;
@@ -65,15 +86,43 @@ router.post('/', async (req, res) => {
       homeSize: lead.homeSize, timestamp: lead.timestamp,
     }));
 
+    // Generate a lead ID for tracking booking status
+    const leadId = 'lead_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    leadStatus.set(leadId, { name: lead.name, phone: lead.phone, status: 'viewed_quote', createdAt: lead.timestamp });
+    // Clean up old entries after 24 hours
+    setTimeout(() => leadStatus.delete(leadId), 24 * 60 * 60 * 1000);
+
     const resendKey = process.env.RESEND_API_KEY;
     const toEmail = process.env.QUOTE_LEAD_EMAIL_TO || 'office@gmail.com';
     const fromEmail = process.env.RESEND_FROM || 'ROX Quote Wizard <onboarding@resend.dev>';
     const scheduleUrl = (process.env.QUOTE_SCHEDULE_URL || 'https://rox-chat-production.up.railway.app/widget/quote-wizard.html') + (process.env.QUOTE_SCHEDULE_URL ? '' : '?book=true');
     const bookDirectUrl = 'https://rox-chat-production.up.railway.app/widget/quote-wizard.html?book=true';
 
+    // Financing terms
+    const termMonths = lead.financingTermMonths || 120;
+    const apr = lead.financingAPR || 10.95;
+    const financingLine = termMonths + ' months @ ' + apr + '% APR';
+
+    // Build a "view what customer saw" link with their selections pre-filled
+    const wizardBaseUrl = 'https://rox-chat-production.up.railway.app/widget/quote-wizard.html';
+    const viewParams = new URLSearchParams({
+      viewQuote: 'true',
+      name: lead.name || '',
+      systemType: lead.systemType || '',
+      homeSize: lead.homeSize || '',
+    });
+    const viewQuoteUrl = wizardBaseUrl + '?' + viewParams.toString();
+
+    // Did customer book?
+    const didBook = lead.type === 'booking_confirmed';
+    const bookingStatus = didBook
+      ? '✅ CUSTOMER BOOKED A HOME VISIT' + (lead.bookedSlot ? ' — ' + lead.bookedSlot : '')
+      : '⚠️ Customer viewed pricing but DID NOT schedule an appointment. Follow up recommended.';
+    const bookingStatusColor = didBook ? '#16A34A' : '#DC2626';
+
     if (!resendKey) {
       console.warn('[quote-lead] RESEND_API_KEY not set. Lead logged but email not sent.');
-      return res.json({ success: true, emailSent: false });
+      return res.json({ success: true, emailSent: false, leadId });
     }
 
     const phoneDigits = (lead.phone || '').replace(/\D/g, '');
@@ -81,13 +130,17 @@ router.post('/', async (req, res) => {
     // ================================================================
     // EMAIL 1: OFFICE NOTIFICATION (DETAILED)
     // ================================================================
-    const officeSubject = 'New Online Quote Lead: ' + (lead.name || 'Unknown');
+    const officeSubject = (didBook ? '✅ Booking Confirmed: ' : '🔔 New Quote Lead: ') + (lead.name || 'Unknown');
 
     const officeHtml = '<div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto;">' +
       // Header
       '<div style="background: #F28C28; color: white; padding: 20px 24px; border-radius: 8px 8px 0 0;">' +
-      '<h2 style="margin: 0; font-size: 20px;">New Online Quote Lead</h2>' +
-      '<p style="margin: 4px 0 0; opacity: 0.9; font-size: 14px;">Someone viewed pricing on the quoting wizard</p>' +
+      '<h2 style="margin: 0; font-size: 20px;">' + (didBook ? 'Booking Confirmed!' : 'New Online Quote Lead') + '</h2>' +
+      '<p style="margin: 4px 0 0; opacity: 0.9; font-size: 14px;">' + (didBook ? 'Customer booked a home visit from the quoting wizard' : 'Someone viewed pricing on the quoting wizard') + '</p>' +
+      '</div>' +
+      // Booking status banner
+      '<div style="background: ' + bookingStatusColor + '15; border-left: 4px solid ' + bookingStatusColor + '; padding: 14px 20px; margin: 0;">' +
+      '<div style="font-size: 14px; font-weight: 700; color: ' + bookingStatusColor + ';">' + bookingStatus + '</div>' +
       '</div>' +
       // Quick actions bar
       '<div style="background: #333; padding: 14px 24px; display: flex;">' +
@@ -119,6 +172,16 @@ router.post('/', async (req, res) => {
       officeEquipmentRow('Better', '#2563EB', lead.betterName, lead.betterStage || '2 Stage', lead.betterMonthly, lead.betterSeer2, lead.betterHspf2, lead.betterAfue) +
       officeEquipmentRow('Best ⭐', '#F28C28', lead.bestName, lead.bestStage || 'Inverter', lead.bestMonthly, lead.bestSeer2, lead.bestHspf2, lead.bestAfue) +
       '</table>' +
+      // Financing terms
+      '<div style="background: #F0F4FF; border: 1px solid #D0D8E8; border-radius: 8px; padding: 14px 16px; margin-top: 16px;">' +
+      '<table style="width: 100%; border-collapse: collapse;">' +
+      '<tr><td style="font-size: 13px; color: #555; font-weight: 600;">Financing Terms</td><td style="font-size: 13px; color: #333; text-align: right; font-weight: 700;">' + financingLine + '</td></tr>' +
+      (lead.goodCashPrice ? '<tr><td style="font-size: 12px; color: #888; padding-top: 6px;">Cash Prices</td><td style="font-size: 12px; color: #666; text-align: right; padding-top: 6px;">Good: $' + Number(lead.goodCashPrice).toLocaleString() + ' &nbsp;|&nbsp; Better: $' + Number(lead.betterCashPrice).toLocaleString() + ' &nbsp;|&nbsp; Best: $' + Number(lead.bestCashPrice).toLocaleString() + '</td></tr>' : '') +
+      '</table></div>' +
+      // View what customer saw link
+      '<div style="text-align: center; margin-top: 16px;">' +
+      '<a href="' + viewQuoteUrl + '" style="display: inline-block; background: #F5F5F5; color: #555; text-decoration: none; padding: 10px 24px; border-radius: 6px; font-size: 13px; font-weight: 600; border: 1px solid #DDD;">👁️ View What Customer Saw</a>' +
+      '</div>' +
       '</div>' +
       // Footer
       '<div style="background: #F5F5F5; padding: 16px 24px; border-radius: 0 0 8px 8px; border: 1px solid #e5e5e5; border-top: none;">' +
@@ -126,7 +189,6 @@ router.post('/', async (req, res) => {
       '<td style="font-size: 12px; color: #999;">Captured: ' + (lead.timestamp || 'unknown') + '</td>' +
       '<td style="font-size: 12px; color: #999; text-align: right;">Source: Online Quoting Wizard</td>' +
       '</tr></table>' +
-      '<p style="font-size: 11px; color: #BBB; margin: 8px 0 0; text-align: center;">Customer has NOT booked a home visit yet. Follow up recommended.</p>' +
       '</div></div>';
 
     // ================================================================
@@ -157,7 +219,7 @@ router.post('/', async (req, res) => {
       equipmentCard('best', 'Best', lead.bestName, lead.bestStage || 'Inverter', lead.bestMonthly, lead.bestSeer2, lead.bestHspf2, lead.bestAfue, bookDirectUrl) +
       '</tr></table></div>' +
       '<div style="text-align: center; padding: 20px 24px 8px;">' +
-      '<p style="font-size: 12px; color: #999; margin: 0;">*Monthly prices based on approved financing. Final pricing confirmed during your free home visit.</p>' +
+      '<p style="font-size: 12px; color: #999; margin: 0;">*Monthly prices based on ' + financingLine + ' with approved credit. Final pricing confirmed during your free home visit.</p>' +
       '</div>' +
       '<div style="text-align: center; padding: 16px 24px 32px;">' +
       '<div style="background: #FFF8F0; border: 2px solid #F28C28; border-radius: 12px; padding: 24px;">' +
@@ -202,7 +264,7 @@ router.post('/', async (req, res) => {
       }
     }
 
-    res.json({ success: true, emailSent: true });
+    res.json({ success: true, emailSent: true, leadId });
   } catch (error) {
     console.error('[quote-lead] Error:', error.message);
     res.json({ success: true });
