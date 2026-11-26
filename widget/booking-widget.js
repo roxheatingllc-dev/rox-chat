@@ -1,5 +1,16 @@
 /**
- * ROX Booking Widget v1.35 - The code screen says what happened to the text
+ * ROX Booking Widget v1.36 - "We emailed a link" when the email carries one
+ *
+ * v1.36 Changes (2026-11-26, server v2.353.0):
+ *   - When the code text fails and the server emails the customer (the address
+ *     on file — already verified), the email now carries a "Move my …
+ *     appointment" link per appointment. The status reply says so
+ *     (emailedLinks) and the code screen reads: "We couldn't reach your phone,
+ *     so we emailed a link to r•••@gmail.com. Tap it to pick a new time — or
+ *     enter the code from the email here."
+ *   - Embed: booking-widget.js?v=36
+ *
+ * v1.35 - The code screen says what happened to the text
  *
  * v1.35 Changes (2026-11-26, server v2.351.0):
  *   - On 11/26 every code text to (720) 548-0200 failed at the carrier (30003)
@@ -2038,8 +2049,10 @@
   // touching the code input (typing is never blocked).
   const RL_POLL_MS = 5000;
   const RL_POLL_MAX_MS = 150000;
-  function rlDeliveryText(stage, maskedEmail) {
+  function rlDeliveryText(stage, maskedEmail, emailedLinks) {
     if (stage === 'retrying_backup') return { ok: false, tone: 'warn', text: 'Still sending\u2026 trying another number.' };
+    // v1.36 — server v2.353.0: the email carries a link straight to the calendar (the address is verified).
+    if (stage === 'emailed' && emailedLinks) return { ok: true, tone: 'ok', text: `We couldn't reach your phone, so we emailed a link to ${maskedEmail || 'the email on your account'}. Tap it to pick a new time \u2014 or enter the code from the email here.` };
     if (stage === 'emailed') return { ok: true, tone: 'ok', text: `We couldn't reach your phone, so we emailed your code to ${maskedEmail || 'the email on your account'}.` };
     if (stage === 'office_alerted') return { ok: false, tone: 'warn', text: "We couldn't reach your phone. Our office will call you shortly." };
     return null;
@@ -2059,7 +2072,7 @@
       try { st = await apiGet('/reschedule-code/status', { sendId }); } catch (_) { st = null; }
       if (state._rlSendId !== sendId || (state._rlStage || 'phone') !== 'code') return;
       const stage = st && st.stage;
-      const msg = rlDeliveryText(stage, st && st.maskedEmail);
+      const msg = rlDeliveryText(stage, st && st.maskedEmail, !!(st && st.emailedLinks));
       if (msg && stage !== state._rlDeliveryStage) {
         state._rlDeliveryStage = stage;
         state._rlResult = msg;
