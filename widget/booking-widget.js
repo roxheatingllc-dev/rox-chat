@@ -1,5 +1,16 @@
 /**
- * ROX Booking Widget v1.32 - "Need to reschedule an existing appointment?"
+ * ROX Booking Widget v1.33 - The /reschedule page is reschedule-only
+ *
+ * v1.33 Changes (2026-11-26):
+ *   - Jason, on roxheating.com/reschedule: "it needs its own booking engine
+ *     because this doesn't look like it's just for reschedule". Without a link
+ *     code that page started the normal booking wizard. Now (path /reschedule,
+ *     or data-mode="reschedule" on the container) it shows "Find your
+ *     appointment": phone → text me a link. "Book a new appointment instead?"
+ *     switches to the wizard. The expired/invalid-link card also offers a new
+ *     link by text.
+ *
+ * v1.32 - "Need to reschedule an existing appointment?"
  *
  * v1.32 Changes (2026-11-26, server v2.346.0):
  *   - Jason: there was no reschedule link on the booking page. The first
@@ -498,7 +509,8 @@
     RESCHEDULE_LOAD: 'reschedule_load',
     RESCHEDULE_CALENDAR: 'reschedule_calendar',
     RESCHEDULE_SUCCESS: 'reschedule_success',
-    RESCHEDULE_FAIL: 'reschedule_fail'
+    RESCHEDULE_FAIL: 'reschedule_fail',
+    RESCHEDULE_LOOKUP: 'reschedule_lookup'   // v1.33 — the /reschedule page with no link code
   };
 
   const STEP_FLOW = {
@@ -994,7 +1006,8 @@
     // has only 2-3 steps total — load → calendar → done — and a
     // progress bar would feel oversized for that).
     if (state._rescheduleMode) {
-      html += `<div class="rxb-header"><h2>Reschedule Your Appointment</h2><p>Pick a new time that works for you</p></div>`;
+      const rlSub = state.currentStep === STEPS.RESCHEDULE_LOOKUP ? "We'll text you a link to pick a new time" : 'Pick a new time that works for you';   // v1.33
+      html += `<div class="rxb-header"><h2>Reschedule Your Appointment</h2><p>${rlSub}</p></div>`;
     } else {
       const stepIdx = getStepIndex();
       const totalSteps = getTotalSteps();
@@ -1042,6 +1055,7 @@
       case STEPS.RESCHEDULE_CALENDAR: return renderRescheduleCalendar();
       case STEPS.RESCHEDULE_SUCCESS: return renderRescheduleSuccess();
       case STEPS.RESCHEDULE_FAIL: return renderRescheduleFail();
+      case STEPS.RESCHEDULE_LOOKUP: return renderRescheduleLookupPage();   // v1.33
       default: return '<p>Unknown step</p>';
     }
   }
@@ -1071,16 +1085,10 @@
     if (!state._rlOpen) {
       return `<div style="margin-top:18px;text-align:center"><button data-action="rl-open" style="background:none;border:none;color:${C.primary};font-size:14px;font-weight:600;cursor:pointer;text-decoration:underline">Need to reschedule an existing appointment?</button></div>`;
     }
-    const msg = state._rlResult
-      ? `<div style="margin-top:12px;padding:12px 14px;border-radius:8px;font-size:14px;${state._rlResult.ok ? 'background:#ECFDF5;border:1px solid #6EE7B7;color:#065F46' : 'background:#FEF2F2;border:1px solid #FCA5A5;color:#7F1D1D'}">${state._rlResult.ok ? '\u2713 ' : ''}${escapeHtml(state._rlResult.text || '')}</div>`
-      : '';
-    const done = state._rlResult && state._rlResult.ok;
     return `<div style="margin-top:18px;padding:16px;border:1px solid ${C.cardBorder};border-radius:10px;background:${C.stepBtnBg}">`
       + `<div style="font-size:15px;font-weight:700;margin-bottom:4px;color:${C.text}">Reschedule an existing appointment</div>`
       + `<div style="font-size:13px;margin-bottom:10px;color:${C.textSecondary}">Enter the phone number on your account and we'll text you a link to pick a new time.</div>`
-      + (done ? '' : `<input type="tel" class="rxb-input" id="rxb-rl-phone" placeholder="(720) 555-1234" value="${formatPhone(state._rlPhone || '')}" maxlength="14" autocomplete="tel">`
-      + `<button class="rxb-next-btn" style="width:100%;margin-top:10px" data-action="rl-send" ${state._rlBusy || !state._rlPhone || state._rlPhone.length < 10 ? 'disabled' : ''}>${state._rlBusy ? 'Sending\u2026' : 'Text me a link'}</button>`)
-      + msg
+      + renderRescheduleLookupForm('')
       + `</div>`;
   }
 
@@ -1935,6 +1943,39 @@
       +   `<p style="margin-top:18px;font-size:15px;color:${C.text}">Please give us a call and we'll get you taken care of:</p>`
       +   `<p style="margin-top:8px;font-size:22px;font-weight:700;color:${C.primary}"><a href="tel:${telHref}" style="color:inherit;text-decoration:none">${officePhone}</a></p>`
       + `</div>`
+      + `<div style="margin-top:22px;border-top:1px solid ${C.cardBorder};padding-top:18px">${renderRescheduleLookupForm('Or get a new link by text')}</div>`   // v1.33
+      + `</div>`;
+  }
+
+  /**
+   * v1.33 — Jason (11/26, on his phone at roxheating.com/reschedule): "it needs
+   * its own booking engine because this doesn't look like it's just for
+   * reschedule". With no link code, the /reschedule page used to start the
+   * normal booking wizard. Now it is reschedule-only: phone → the server texts
+   * the customer's personal link to the mobile on file → that link opens this
+   * page in reschedule mode. A small link switches to booking a NEW visit.
+   */
+  function renderRescheduleLookupForm(title) {
+    const C = THEME.colors;
+    const done = state._rlResult && state._rlResult.ok;
+    const msg = state._rlResult
+      ? `<div style="margin-top:12px;padding:12px 14px;border-radius:8px;font-size:14px;text-align:left;${state._rlResult.ok ? 'background:#ECFDF5;border:1px solid #6EE7B7;color:#065F46' : 'background:#FEF2F2;border:1px solid #FCA5A5;color:#7F1D1D'}">${state._rlResult.ok ? '\u2713 ' : ''}${escapeHtml(state._rlResult.text || '')}</div>`
+      : '';
+    return (title ? `<div style="font-size:15px;font-weight:700;margin-bottom:6px;color:${C.text}">${escapeHtml(title)}</div>` : '')
+      + (done ? '' : `<label class="rxb-label" for="rxb-rl-phone">Phone number on your account</label>`
+        + `<input type="tel" class="rxb-input" id="rxb-rl-phone" placeholder="(720) 555-1234" value="${formatPhone(state._rlPhone || '')}" maxlength="14" autocomplete="tel">`
+        + `<button class="rxb-next-btn" style="width:100%;margin-top:12px" data-action="rl-send" ${state._rlBusy || !state._rlPhone || state._rlPhone.length < 10 ? 'disabled' : ''}>${state._rlBusy ? 'Sending\u2026' : 'Text me a link'}</button>`)
+      + msg;
+  }
+
+  function renderRescheduleLookupPage() {
+    const C = THEME.colors;
+    return `<div class="rxb-card">`
+      + `<div class="rxb-card-title">Find your appointment</div>`
+      + `<div class="rxb-card-subtitle">Enter the phone number on your account. We'll text you a secure link where you can pick a new time with your same technician.</div>`
+      + renderRescheduleLookupForm('')
+      + `<p style="margin-top:20px;font-size:13px;color:${C.textSecondary};text-align:center">Prefer to talk? Call us at <a href="tel:${CONFIG.companyPhone.replace(/\D/g, '')}" style="color:${C.primary};font-weight:600;text-decoration:none">${CONFIG.companyPhone}</a></p>`
+      + `<div style="margin-top:6px;text-align:center"><button data-action="rl-book-new" style="background:none;border:none;color:${C.textSecondary};font-size:13px;cursor:pointer;text-decoration:underline">Need to book a new appointment instead?</button></div>`
       + `</div>`;
   }
 
@@ -2344,6 +2385,15 @@
         render();
         break;
       // ── v1.32 "NEED TO RESCHEDULE AN EXISTING APPOINTMENT?" ─────
+      case 'rl-book-new':   // v1.33 — from the reschedule-only page
+        state._rescheduleMode = false;
+        state._rlResult = null;
+        state.currentStep = STEPS.SERVICE_TYPE;
+        state.loading = true; render();
+        try { await startSession(); } catch (_) { /* startSession reports its own errors */ }
+        state.loading = false;
+        render();
+        break;
       case 'rl-open':
         state._rlOpen = true; state._rlResult = null;
         render();
@@ -3053,6 +3103,18 @@
    * getRescheduleSlugFromUrl() to support both the legacy long-token URL
    * form AND the new short-link ?t=<slug> form.
    */
+  /**
+   * v1.33 — is this the reschedule page? The /reschedule path (the SMS links'
+   * page), or an embed that sets data-mode="reschedule" on the container.
+   */
+  function isReschedulePage() {
+    try {
+      if (/^\/reschedule(?:\/|$)/i.test(window.location.pathname || '')) return true;
+      const el = document.getElementById(CONFIG.containerId);
+      return !!(el && el.dataset && el.dataset.mode === 'reschedule');
+    } catch (e) { return false; }
+  }
+
   function getTokenFromUrl() {
     try {
       const params = new URLSearchParams(window.location.search);
@@ -3371,6 +3433,15 @@
             render();
           });
       }
+      return;
+    }
+
+    // ── v1.33 — the /reschedule page with NO link code: reschedule-only ──
+    if (isReschedulePage()) {
+      console.log('[ROX Booking] Reschedule page without a link code -- showing the find-your-appointment screen');
+      state._rescheduleMode = true;
+      state.currentStep = STEPS.RESCHEDULE_LOOKUP;
+      render();
       return;
     }
 
