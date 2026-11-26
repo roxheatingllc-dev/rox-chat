@@ -1,5 +1,16 @@
 /**
- * ROX Booking Widget v1.33 - The /reschedule page is reschedule-only
+ * ROX Booking Widget v1.34 - Pick which appointment to move, right on the page
+ *
+ * v1.34 Changes (2026-11-26, server v2.347.0):
+ *   - Jason: "It should pull up their next scheduled appointment and they can
+ *     click which ones they want to reschedule." Phone → a 6-digit code texted
+ *     to the mobile on file → the upcoming appointments (date, service, tech)
+ *     → tap one → its calendar opens here (the existing reschedule mode, with
+ *     that appointment's token). Appointments less than an hour away, or with
+ *     no tech, say "please call us". Same form on the booking page box, the
+ *     /reschedule page and the expired-link card.
+ *
+ * v1.33 - The /reschedule page is reschedule-only
  *
  * v1.33 Changes (2026-11-26):
  *   - Jason, on roxheating.com/reschedule: "it needs its own booking engine
@@ -1006,7 +1017,7 @@
     // has only 2-3 steps total — load → calendar → done — and a
     // progress bar would feel oversized for that).
     if (state._rescheduleMode) {
-      const rlSub = state.currentStep === STEPS.RESCHEDULE_LOOKUP ? "We'll text you a link to pick a new time" : 'Pick a new time that works for you';   // v1.33
+      const rlSub = state.currentStep === STEPS.RESCHEDULE_LOOKUP ? 'Find your appointment and pick a new time' : 'Pick a new time that works for you';   // v1.33 / v1.34
       html += `<div class="rxb-header"><h2>Reschedule Your Appointment</h2><p>${rlSub}</p></div>`;
     } else {
       const stepIdx = getStepIndex();
@@ -1087,7 +1098,7 @@
     }
     return `<div style="margin-top:18px;padding:16px;border:1px solid ${C.cardBorder};border-radius:10px;background:${C.stepBtnBg}">`
       + `<div style="font-size:15px;font-weight:700;margin-bottom:4px;color:${C.text}">Reschedule an existing appointment</div>`
-      + `<div style="font-size:13px;margin-bottom:10px;color:${C.textSecondary}">Enter the phone number on your account and we'll text you a link to pick a new time.</div>`
+      + `<div style="font-size:13px;margin-bottom:10px;color:${C.textSecondary}">Enter the phone number on your account. We'll text you a code, then show your appointments.</div>`
       + renderRescheduleLookupForm('')
       + `</div>`;
   }
@@ -1943,7 +1954,7 @@
       +   `<p style="margin-top:18px;font-size:15px;color:${C.text}">Please give us a call and we'll get you taken care of:</p>`
       +   `<p style="margin-top:8px;font-size:22px;font-weight:700;color:${C.primary}"><a href="tel:${telHref}" style="color:inherit;text-decoration:none">${officePhone}</a></p>`
       + `</div>`
-      + `<div style="margin-top:22px;border-top:1px solid ${C.cardBorder};padding-top:18px">${renderRescheduleLookupForm('Or get a new link by text')}</div>`   // v1.33
+      + `<div style="margin-top:22px;border-top:1px solid ${C.cardBorder};padding-top:18px">${renderRescheduleLookupForm('Or look up your appointments')}</div>`   // v1.33
       + `</div>`;
   }
 
@@ -1956,23 +1967,49 @@
    * page in reschedule mode. A small link switches to booking a NEW visit.
    */
   function renderRescheduleLookupForm(title) {
+    // v1.34 — three stages: phone → code (texted to the mobile on file) →
+    // the customer's upcoming appointments; tapping one opens its calendar.
     const C = THEME.colors;
-    const done = state._rlResult && state._rlResult.ok;
-    const msg = state._rlResult
+    const stage = state._rlStage || 'phone';
+    const note = state._rlResult
       ? `<div style="margin-top:12px;padding:12px 14px;border-radius:8px;font-size:14px;text-align:left;${state._rlResult.ok ? 'background:#ECFDF5;border:1px solid #6EE7B7;color:#065F46' : 'background:#FEF2F2;border:1px solid #FCA5A5;color:#7F1D1D'}">${state._rlResult.ok ? '\u2713 ' : ''}${escapeHtml(state._rlResult.text || '')}</div>`
       : '';
-    return (title ? `<div style="font-size:15px;font-weight:700;margin-bottom:6px;color:${C.text}">${escapeHtml(title)}</div>` : '')
-      + (done ? '' : `<label class="rxb-label" for="rxb-rl-phone">Phone number on your account</label>`
-        + `<input type="tel" class="rxb-input" id="rxb-rl-phone" placeholder="(720) 555-1234" value="${formatPhone(state._rlPhone || '')}" maxlength="14" autocomplete="tel">`
-        + `<button class="rxb-next-btn" style="width:100%;margin-top:12px" data-action="rl-send" ${state._rlBusy || !state._rlPhone || state._rlPhone.length < 10 ? 'disabled' : ''}>${state._rlBusy ? 'Sending\u2026' : 'Text me a link'}</button>`)
-      + msg;
+    const head = title ? `<div style="font-size:15px;font-weight:700;margin-bottom:6px;color:${C.text}">${escapeHtml(title)}</div>` : '';
+    const small = (action, label) => `<button data-action="${action}" style="background:none;border:none;color:${C.textSecondary};font-size:13px;cursor:pointer;text-decoration:underline;padding:6px 4px">${label}</button>`;
+    if (stage === 'list') {
+      const appts = state._rlAppts || [];
+      const items = appts.map((a, i) => {
+        const sub = [a.service, a.techName ? 'with ' + a.techName : ''].filter(Boolean).join(' \u00b7 ');
+        if (!a.movable) {
+          const why = a.why === 'too_soon' ? 'Less than an hour away \u2014 please call us to change it.' : 'Please call us to change this one.';
+          return `<div class="rxb-option-btn" style="opacity:.65;cursor:default;display:block"><div class="rxb-option-label">${escapeHtml(a.whenText || '')}</div><div class="rxb-option-desc">${escapeHtml(sub)}</div><div class="rxb-option-desc" style="margin-top:4px">${why}</div></div>`;
+        }
+        return `<button class="rxb-option-btn" data-action="rl-pick" data-idx="${i}" style="display:block;text-align:left"><div class="rxb-option-label">${escapeHtml(a.whenText || '')}</div><div class="rxb-option-desc">${escapeHtml(sub)}</div><div style="margin-top:6px;font-size:13px;font-weight:600;color:${C.primary}">Reschedule this appointment \u2192</div></button>`;
+      }).join('');
+      const hi = state._rlFirstName ? `Hi ${escapeHtml(state._rlFirstName)}! ` : '';
+      return head
+        + `<div style="font-size:15px;font-weight:600;margin:14px 0 10px;color:${C.text}">${hi}Which appointment would you like to move?</div>`
+        + `<div class="rxb-options">${items || `<div style="font-size:14px;color:${C.textSecondary}">No upcoming appointments found.</div>`}</div>`;
+    }
+    if (stage === 'code') {
+      return head + note
+        + `<label class="rxb-label" for="rxb-rl-code" style="margin-top:14px;display:block">6-digit code</label>`
+        + `<input type="text" inputmode="numeric" pattern="[0-9]*" class="rxb-input" id="rxb-rl-code" placeholder="123456" value="${escapeHtml(state._rlCode || '')}" maxlength="6" autocomplete="one-time-code" style="letter-spacing:4px;font-size:20px;text-align:center">`
+        + `<button class="rxb-next-btn" style="width:100%;margin-top:12px" data-action="rl-verify" ${state._rlBusy || !state._rlCode || state._rlCode.length !== 6 ? 'disabled' : ''}>${state._rlBusy ? 'Checking\u2026' : 'Show my appointments'}</button>`
+        + `<div style="margin-top:8px;text-align:center">${small('rl-resend', 'Send a new code')}${small('rl-change', 'Use a different number')}</div>`;
+    }
+    return head
+      + `<label class="rxb-label" for="rxb-rl-phone">Phone number on your account</label>`
+      + `<input type="tel" class="rxb-input" id="rxb-rl-phone" placeholder="(720) 555-1234" value="${formatPhone(state._rlPhone || '')}" maxlength="14" autocomplete="tel">`
+      + `<button class="rxb-next-btn" style="width:100%;margin-top:12px" data-action="rl-send" ${state._rlBusy || !state._rlPhone || state._rlPhone.length < 10 ? 'disabled' : ''}>${state._rlBusy ? 'Sending\u2026' : 'Text me a code'}</button>`
+      + note;
   }
 
   function renderRescheduleLookupPage() {
     const C = THEME.colors;
     return `<div class="rxb-card">`
       + `<div class="rxb-card-title">Find your appointment</div>`
-      + `<div class="rxb-card-subtitle">Enter the phone number on your account. We'll text you a secure link where you can pick a new time with your same technician.</div>`
+      + `<div class="rxb-card-subtitle">Enter the phone number on your account. We'll text you a code, then show your upcoming appointments so you can pick a new time with your same technician.</div>`
       + renderRescheduleLookupForm('')
       + `<p style="margin-top:20px;font-size:13px;color:${C.textSecondary};text-align:center">Prefer to talk? Call us at <a href="tel:${CONFIG.companyPhone.replace(/\D/g, '')}" style="color:${C.primary};font-weight:600;text-decoration:none">${CONFIG.companyPhone}</a></p>`
       + `<div style="margin-top:6px;text-align:center"><button data-action="rl-book-new" style="background:none;border:none;color:${C.textSecondary};font-size:13px;cursor:pointer;text-decoration:underline">Need to book a new appointment instead?</button></div>`
@@ -2084,6 +2121,16 @@
         e.target.value = formatPhone(digits);
         const btn = root.querySelector('[data-action="lookup-phone"]');
         if (btn) btn.disabled = digits.length < 10;
+      });
+    }
+    const rlCode = root.querySelector('#rxb-rl-code');   // v1.34
+    if (rlCode) {
+      rlCode.addEventListener('input', (e) => {
+        const digits = String(e.target.value || '').replace(/\D/g, '').slice(0, 6);
+        state._rlCode = digits;
+        e.target.value = digits;
+        const btn = root.querySelector('[data-action="rl-verify"]');
+        if (btn) btn.disabled = digits.length !== 6;
       });
     }
     const rlPhone = root.querySelector('#rxb-rl-phone');   // v1.32
@@ -2399,18 +2446,56 @@
         render();
         { const el = root.querySelector('#rxb-rl-phone'); if (el) el.focus(); }
         break;
-      case 'rl-send': {
+      case 'rl-send':
+      case 'rl-resend': {   // v1.34 — text a code to the mobile on file
         if (state._rlBusy || !state._rlPhone || state._rlPhone.length < 10) break;
         state._rlBusy = true; state._rlResult = null; render();
         try {
-          const r = await api('POST', '/reschedule-link', { phone: state._rlPhone });
+          const r = await api('POST', '/reschedule-start', { phone: state._rlPhone });
           state._rlResult = { ok: !!(r && r.ok), text: (r && r.text) || '' };
+          if (r && r.ok) { state._rlStage = 'code'; state._rlCode = ''; }
         } catch (err) {
           const t = err && err.body && err.body.text;
           state._rlResult = { ok: false, text: t || ('Something went wrong. Please call us at ' + CONFIG.companyPhone + '.') };
         }
         state._rlBusy = false;
         render();
+        { const el = root.querySelector('#rxb-rl-code'); if (el) el.focus(); }
+        break;
+      }
+      case 'rl-verify': {   // v1.34 — the code unlocks the appointments list
+        if (state._rlBusy || !state._rlCode || state._rlCode.length !== 6) break;
+        state._rlBusy = true; state._rlResult = null; render();
+        try {
+          const r = await api('POST', '/reschedule-verify', { phone: state._rlPhone, code: state._rlCode });
+          if (r && r.ok) {
+            state._rlStage = 'list';
+            state._rlAppts = Array.isArray(r.appointments) ? r.appointments : [];
+            state._rlFirstName = r.firstName || '';
+          } else {
+            state._rlResult = { ok: false, text: (r && r.text) || 'That code did not work.' };
+          }
+        } catch (err) {
+          const t = err && err.body && err.body.text;
+          state._rlResult = { ok: false, text: t || ('Something went wrong. Please call us at ' + CONFIG.companyPhone + '.') };
+        }
+        state._rlBusy = false;
+        render();
+        break;
+      }
+      case 'rl-change':
+        state._rlStage = 'phone'; state._rlResult = null; state._rlCode = '';
+        render();
+        break;
+      case 'rl-pick': {   // v1.34 — open the picked appointment's calendar in place
+        const a = (state._rlAppts || [])[parseInt(e.currentTarget.dataset.idx, 10)];
+        if (!a || !a.token) break;
+        state._rescheduleMode = true;
+        state._rescheduleToken = a.token;
+        state._rescheduleContext = null;
+        state._rescheduleFailMode = null;
+        prewarmReschedule();
+        loadReschedule();
         break;
       }
       case 'join-waitlist': {   // v1.28

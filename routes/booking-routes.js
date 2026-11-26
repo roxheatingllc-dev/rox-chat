@@ -232,6 +232,33 @@ router.post('/reschedule-link', rateLimit, rescheduleLinkLimit, async (req, res)
 });
 
 // ========================================
+// v2.347.0 — in-page reschedule: a code by text, then the appointments list.
+// /reschedule-start shares the per-visitor limit above (5 / 15 min); the
+// engine allows 5 guesses per code, so /reschedule-verify only gets the
+// general limiter here.
+// ========================================
+function proxyWithText(enginePath) {
+  return async (req, res) => {
+    try {
+      const body = { phone: String((req.body && req.body.phone) || '').slice(0, 32) };
+      if (req.body && req.body.code != null) body.code = String(req.body.code).slice(0, 12);
+      res.json(await bookingAdapter.request('POST', enginePath, body));
+    } catch (err) {
+      const m = /Engine returned (\d{3}): ([\s\S]*)$/.exec(err.message || '');
+      if (m) {
+        let parsed = null;
+        try { parsed = JSON.parse(m[2]); } catch (_) { parsed = null; }
+        if (parsed && typeof parsed.text === 'string') return res.status(Number(m[1])).json({ ok: false, text: parsed.text });
+      }
+      console.error('[BookingRoutes] ' + enginePath + ' error:', err.message);
+      res.status(500).json({ ok: false, text: 'Something went wrong. Please call us at (720) 468-0689.' });
+    }
+  };
+}
+router.post('/reschedule-start', rateLimit, rescheduleLinkLimit, proxyWithText('/reschedule-start'));
+router.post('/reschedule-verify', rateLimit, proxyWithText('/reschedule-verify'));
+
+// ========================================
 // POST /api/booking/abandon — Proxy to engine
 // Called by booking widget on page unload or close
 // ========================================
