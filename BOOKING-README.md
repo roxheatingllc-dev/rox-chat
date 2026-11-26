@@ -59,6 +59,29 @@ Uses real-time HousecallPro availability to show only open slots.
 <script src="https://rox-chat-production.up.railway.app/widget/booking-widget.js?v=10"></script>
 ```
 
+### Reschedule-only page (v1.33)
+
+The page the reschedule texts link to (`roxheating.com/reschedule`) uses the same
+script with `mode: "reschedule"`. With a link code (`?t=…`) it shows the customer's
+appointment and their technician's open times; without one it shows "Find your
+appointment" (phone → we text the link to the mobile number on file).
+
+```html
+<div id="rox-booking"></div>
+
+<script>
+  window.ROX_BOOKING_CONFIG = {
+    serverUrl: "https://rox-chat-production.up.railway.app",
+    theme: "rox-default",
+    containerId: "rox-booking",
+    companyName: "ROX Heating & Air",
+    companyPhone: "(720) 468-0689",
+    mode: "reschedule"
+  };
+</script>
+<script src="https://rox-chat-production.up.railway.app/widget/booking-widget.js?v=33"></script>
+```
+
 **Cache busting:** Bump the `?v=N` query param after every change to `booking-widget.js`. Current version is `?v=10` (see `Architecture/Current Widget Versions and Cache-Bust Numbers.md` for the live tracking). Without the bump, WordPress and SiteGround caches will keep serving the old widget JS to visitors.
 
 ## Tech Routing Rules

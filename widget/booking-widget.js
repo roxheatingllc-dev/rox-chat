@@ -3104,11 +3104,13 @@
    * form AND the new short-link ?t=<slug> form.
    */
   /**
-   * v1.33 — is this the reschedule page? The /reschedule path (the SMS links'
-   * page), or an embed that sets data-mode="reschedule" on the container.
+   * v1.33 — is this the reschedule page? CONFIG.mode 'reschedule', the
+   * /reschedule path (the SMS links' page), or data-mode="reschedule" on the
+   * container.
    */
   function isReschedulePage() {
     try {
+      if (CONFIG.mode === 'reschedule') return true;   // window.ROX_BOOKING_CONFIG = { mode: 'reschedule', ... }
       if (/^\/reschedule(?:\/|$)/i.test(window.location.pathname || '')) return true;
       const el = document.getElementById(CONFIG.containerId);
       return !!(el && el.dataset && el.dataset.mode === 'reschedule');
