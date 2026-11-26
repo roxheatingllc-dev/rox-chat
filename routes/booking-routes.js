@@ -192,6 +192,46 @@ router.post('/message', rateLimit, async (req, res) => {
 });
 
 // ========================================
+// POST /api/booking/reschedule-link — "Need to reschedule an existing appointment?"
+// The engine texts a reschedule link to the mobile number on file. Limited
+// per VISITOR here (the engine only sees this server's IP, so it limits per
+// phone number). The engine's 400/429 replies carry a customer-facing `text`,
+// which is passed through instead of being turned into a generic error.
+// ========================================
+const rescheduleTries = new Map();   // ip -> [ms]
+function rescheduleLinkLimit(req, res, next) {
+  const ip = req.ip || req.connection.remoteAddress;
+  const now = Date.now();
+  const list = (rescheduleTries.get(ip) || []).filter((t) => now - t < 15 * 60 * 1000);
+  if (list.length >= 5) {
+    rescheduleTries.set(ip, list);
+    return res.status(429).json({ ok: false, text: 'Too many tries. Please wait a few minutes or call us at (720) 468-0689.' });
+  }
+  list.push(now);
+  rescheduleTries.set(ip, list);
+  if (rescheduleTries.size > 5000) rescheduleTries.clear();
+  next();
+}
+
+router.post('/reschedule-link', rateLimit, rescheduleLinkLimit, async (req, res) => {
+  try {
+    const phone = String((req.body && req.body.phone) || '').slice(0, 32);
+    const result = await bookingAdapter.request('POST', '/reschedule-link', { phone });
+    res.json(result);
+  } catch (err) {
+    // "Engine returned 429: {...}" — keep the engine's status and words.
+    const m = /Engine returned (\d{3}): ([\s\S]*)$/.exec(err.message || '');
+    if (m) {
+      let body = null;
+      try { body = JSON.parse(m[2]); } catch (_) { body = null; }
+      if (body && typeof body.text === 'string') return res.status(Number(m[1])).json({ ok: false, text: body.text });
+    }
+    console.error('[BookingRoutes] Reschedule-link error:', err.message);
+    res.status(500).json({ ok: false, text: 'Something went wrong. Please call us at (720) 468-0689.' });
+  }
+});
+
+// ========================================
 // POST /api/booking/abandon — Proxy to engine
 // Called by booking widget on page unload or close
 // ========================================

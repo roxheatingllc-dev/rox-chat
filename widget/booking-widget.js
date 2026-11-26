@@ -1,5 +1,14 @@
 /**
- * ROX Booking Widget v1.31 - Air filter notice after a maintenance / service booking
+ * ROX Booking Widget v1.32 - "Need to reschedule an existing appointment?"
+ *
+ * v1.32 Changes (2026-11-26, server v2.346.0):
+ *   - Jason: there was no reschedule link on the booking page. The first
+ *     screen now has "Need to reschedule an existing appointment?" → phone →
+ *     POST /api/booking/reschedule-link → the server texts the customer's
+ *     personal reschedule link (this widget's reschedule mode) to the mobile
+ *     number on file. The reply text is the server's, shown as-is.
+ *
+ * v1.31 - Air filter notice after a maintenance / service booking
  *
  * v1.31 Changes (2026-11-24):
  *   - Jason: after maintenance or service is scheduled the customer must be
@@ -1049,7 +1058,30 @@
     const afterHoursHtml = state._isAfterHours
       ? `<div style="background:#EFF6FF;border:1px solid #93C5FD;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:14px;color:#1E40AF;">\uD83C\uDF19 <strong>${state._isSunday ? "We're closed today" : "We're currently closed"}</strong> \u2014 but you can still book an appointment here and we'll confirm ${state._isSunday ? 'Monday morning' : 'first thing in the morning'}!</div>`
       : '';
-    return `<div class="rxb-card"><div class="rxb-card-title">What do you need help with?</div><div class="rxb-card-subtitle">Select the service you're looking for</div>${afterHoursHtml}<div class="rxb-options">${options.map(o => `<button class="rxb-option-btn${state.data.serviceType === o.value ? ' selected' : ''}" data-action="select-service" data-value="${o.value}"><div class="rxb-option-icon">${o.icon}</div><div><div class="rxb-option-label">${o.label}</div><div class="rxb-option-desc">${o.desc}</div></div></button>`).join('')}</div></div>`;
+    return `<div class="rxb-card"><div class="rxb-card-title">What do you need help with?</div><div class="rxb-card-subtitle">Select the service you're looking for</div>${afterHoursHtml}<div class="rxb-options">${options.map(o => `<button class="rxb-option-btn${state.data.serviceType === o.value ? ' selected' : ''}" data-action="select-service" data-value="${o.value}"><div class="rxb-option-icon">${o.icon}</div><div><div class="rxb-option-label">${o.label}</div><div class="rxb-option-desc">${o.desc}</div></div></button>`).join('')}</div>${renderRescheduleLookup()}</div>`;
+  }
+
+  // v1.32 — "Need to reschedule an existing appointment?" (server v2.346.0). The
+  // server texts the customer's personal reschedule link to the MOBILE NUMBER ON
+  // FILE — never to the number typed here — and the link opens this widget in
+  // reschedule mode. Lives on the first screen so nobody books a second visit
+  // just to move the first one.
+  function renderRescheduleLookup() {
+    const C = THEME.colors;
+    if (!state._rlOpen) {
+      return `<div style="margin-top:18px;text-align:center"><button data-action="rl-open" style="background:none;border:none;color:${C.primary};font-size:14px;font-weight:600;cursor:pointer;text-decoration:underline">Need to reschedule an existing appointment?</button></div>`;
+    }
+    const msg = state._rlResult
+      ? `<div style="margin-top:12px;padding:12px 14px;border-radius:8px;font-size:14px;${state._rlResult.ok ? 'background:#ECFDF5;border:1px solid #6EE7B7;color:#065F46' : 'background:#FEF2F2;border:1px solid #FCA5A5;color:#7F1D1D'}">${state._rlResult.ok ? '\u2713 ' : ''}${escapeHtml(state._rlResult.text || '')}</div>`
+      : '';
+    const done = state._rlResult && state._rlResult.ok;
+    return `<div style="margin-top:18px;padding:16px;border:1px solid ${C.cardBorder};border-radius:10px;background:${C.stepBtnBg}">`
+      + `<div style="font-size:15px;font-weight:700;margin-bottom:4px;color:${C.text}">Reschedule an existing appointment</div>`
+      + `<div style="font-size:13px;margin-bottom:10px;color:${C.textSecondary}">Enter the phone number on your account and we'll text you a link to pick a new time.</div>`
+      + (done ? '' : `<input type="tel" class="rxb-input" id="rxb-rl-phone" placeholder="(720) 555-1234" value="${formatPhone(state._rlPhone || '')}" maxlength="14" autocomplete="tel">`
+      + `<button class="rxb-next-btn" style="width:100%;margin-top:10px" data-action="rl-send" ${state._rlBusy || !state._rlPhone || state._rlPhone.length < 10 ? 'disabled' : ''}>${state._rlBusy ? 'Sending\u2026' : 'Text me a link'}</button>`)
+      + msg
+      + `</div>`;
   }
 
   function renderCustomerType() {
@@ -2013,6 +2045,16 @@
         if (btn) btn.disabled = digits.length < 10;
       });
     }
+    const rlPhone = root.querySelector('#rxb-rl-phone');   // v1.32
+    if (rlPhone) {
+      rlPhone.addEventListener('input', (e) => {
+        const digits = cleanPhoneDigits(e.target.value);
+        state._rlPhone = digits;
+        e.target.value = formatPhone(digits);
+        const btn = root.querySelector('[data-action="rl-send"]');
+        if (btn) btn.disabled = digits.length < 10;
+      });
+    }
     const contactPhone = root.querySelector('#rxb-contact-phone');
     if (contactPhone) {
       contactPhone.addEventListener('input', (e) => {
@@ -2301,6 +2343,26 @@
         state._nwAnswered = true;
         render();
         break;
+      // ── v1.32 "NEED TO RESCHEDULE AN EXISTING APPOINTMENT?" ─────
+      case 'rl-open':
+        state._rlOpen = true; state._rlResult = null;
+        render();
+        { const el = root.querySelector('#rxb-rl-phone'); if (el) el.focus(); }
+        break;
+      case 'rl-send': {
+        if (state._rlBusy || !state._rlPhone || state._rlPhone.length < 10) break;
+        state._rlBusy = true; state._rlResult = null; render();
+        try {
+          const r = await api('POST', '/reschedule-link', { phone: state._rlPhone });
+          state._rlResult = { ok: !!(r && r.ok), text: (r && r.text) || '' };
+        } catch (err) {
+          const t = err && err.body && err.body.text;
+          state._rlResult = { ok: false, text: t || ('Something went wrong. Please call us at ' + CONFIG.companyPhone + '.') };
+        }
+        state._rlBusy = false;
+        render();
+        break;
+      }
       case 'join-waitlist': {   // v1.28
         if (state._waitlistBusy) break;
         state._waitlistBusy = true; state.error = null; render();
