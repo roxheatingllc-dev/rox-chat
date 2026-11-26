@@ -79,7 +79,7 @@ appointment" (phone → we text the link to the mobile number on file).
     mode: "reschedule"
   };
 </script>
-<script src="https://rox-chat-production.up.railway.app/widget/booking-widget.js?v=33"></script>
+<script src="https://rox-chat-production.up.railway.app/widget/booking-widget.js?v=35"></script>
 ```
 
 **Cache busting:** Bump the `?v=N` query param after every change to `booking-widget.js`. Current version is `?v=10` (see `Architecture/Current Widget Versions and Cache-Bust Numbers.md` for the live tracking). Without the bump, WordPress and SiteGround caches will keep serving the old widget JS to visitors.

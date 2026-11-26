@@ -1,5 +1,20 @@
 /**
- * ROX Booking Widget v1.34 - Pick which appointment to move, right on the page
+ * ROX Booking Widget v1.35 - The code screen says what happened to the text
+ *
+ * v1.35 Changes (2026-11-26, server v2.351.0):
+ *   - On 11/26 every code text to (720) 548-0200 failed at the carrier (30003)
+ *     while the page said "We texted a 6-digit code". The server now checks
+ *     delivery and falls back (backup number → email on file → office call).
+ *     While the code screen is up the widget polls
+ *     GET /api/booking/reschedule-code/status?sendId=… every 5 s for up to
+ *     2.5 min and updates the message box in place (the code input is never
+ *     re-rendered, so typing is not interrupted):
+ *       retrying_backup → "Still sending… trying another number."
+ *       emailed         → "We couldn't reach your phone, so we emailed your code to j•••@gmail.com."
+ *       office_alerted  → "We couldn't reach your phone. Our office will call you shortly."
+ *   - Embed: booking-widget.js?v=35
+ *
+ * v1.34 - Pick which appointment to move, right on the page
  *
  * v1.34 Changes (2026-11-26, server v2.347.0):
  *   - Jason: "It should pull up their next scheduled appointment and they can
@@ -1971,9 +1986,7 @@
     // the customer's upcoming appointments; tapping one opens its calendar.
     const C = THEME.colors;
     const stage = state._rlStage || 'phone';
-    const note = state._rlResult
-      ? `<div style="margin-top:12px;padding:12px 14px;border-radius:8px;font-size:14px;text-align:left;${state._rlResult.ok ? 'background:#ECFDF5;border:1px solid #6EE7B7;color:#065F46' : 'background:#FEF2F2;border:1px solid #FCA5A5;color:#7F1D1D'}">${state._rlResult.ok ? '\u2713 ' : ''}${escapeHtml(state._rlResult.text || '')}</div>`
-      : '';
+    const note = `<div id="rxb-rl-note">${rlNoteInner()}</div>`;   // v1.35 — updated in place by the delivery poll
     const head = title ? `<div style="font-size:15px;font-weight:700;margin-bottom:6px;color:${C.text}">${escapeHtml(title)}</div>` : '';
     const small = (action, label) => `<button data-action="${action}" style="background:none;border:none;color:${C.textSecondary};font-size:13px;cursor:pointer;text-decoration:underline;padding:6px 4px">${label}</button>`;
     if (stage === 'list') {
@@ -2003,6 +2016,60 @@
       + `<input type="tel" class="rxb-input" id="rxb-rl-phone" placeholder="(720) 555-1234" value="${formatPhone(state._rlPhone || '')}" maxlength="14" autocomplete="tel">`
       + `<button class="rxb-next-btn" style="width:100%;margin-top:12px" data-action="rl-send" ${state._rlBusy || !state._rlPhone || state._rlPhone.length < 10 ? 'disabled' : ''}>${state._rlBusy ? 'Sending\u2026' : 'Text me a code'}</button>`
       + note;
+  }
+
+  // v1.35 — the message box under the code step: green (sent / emailed), amber
+  // (still trying / the office will call), red (an error). Its own function so
+  // the delivery poll can repaint just this box without re-rendering the input.
+  function rlNoteInner() {
+    const r = state._rlResult;
+    if (!r) return '';
+    const tone = r.tone || (r.ok ? 'ok' : 'err');
+    const style = tone === 'ok' ? 'background:#ECFDF5;border:1px solid #6EE7B7;color:#065F46'
+      : tone === 'warn' ? 'background:#FFFBEB;border:1px solid #FCD34D;color:#78350F'
+      : 'background:#FEF2F2;border:1px solid #FCA5A5;color:#7F1D1D';
+    return `<div style="margin-top:12px;padding:12px 14px;border-radius:8px;font-size:14px;text-align:left;${style}">${tone === 'ok' ? '\u2713 ' : ''}${escapeHtml(r.text || '')}</div>`;
+  }
+
+  // v1.35 — server v2.351.0 delivery fallback. After "Text me a code" the server
+  // checks whether the text arrived and, if not, tries a backup number, then the
+  // email on file, then has the office call. Poll its stage every 5 s for up to
+  // 2.5 min while the code screen is up, and say what is happening — without
+  // touching the code input (typing is never blocked).
+  const RL_POLL_MS = 5000;
+  const RL_POLL_MAX_MS = 150000;
+  function rlDeliveryText(stage, maskedEmail) {
+    if (stage === 'retrying_backup') return { ok: false, tone: 'warn', text: 'Still sending\u2026 trying another number.' };
+    if (stage === 'emailed') return { ok: true, tone: 'ok', text: `We couldn't reach your phone, so we emailed your code to ${maskedEmail || 'the email on your account'}.` };
+    if (stage === 'office_alerted') return { ok: false, tone: 'warn', text: "We couldn't reach your phone. Our office will call you shortly." };
+    return null;
+  }
+  function stopRlPoll() {
+    if (state._rlPollTimer) { clearTimeout(state._rlPollTimer); state._rlPollTimer = null; }
+  }
+  function startRlPoll(sendId) {
+    stopRlPoll();
+    if (!sendId) return;
+    state._rlSendId = sendId;
+    const startedAt = Date.now();
+    const tick = async () => {
+      state._rlPollTimer = null;
+      if (state._rlSendId !== sendId || (state._rlStage || 'phone') !== 'code') return;   // left the code screen / sent a new code
+      let st = null;
+      try { st = await apiGet('/reschedule-code/status', { sendId }); } catch (_) { st = null; }
+      if (state._rlSendId !== sendId || (state._rlStage || 'phone') !== 'code') return;
+      const stage = st && st.stage;
+      const msg = rlDeliveryText(stage, st && st.maskedEmail);
+      if (msg && stage !== state._rlDeliveryStage) {
+        state._rlDeliveryStage = stage;
+        state._rlResult = msg;
+        const box = root && root.querySelector('#rxb-rl-note');
+        if (box) box.innerHTML = rlNoteInner();
+      }
+      const done = stage === 'delivered' || stage === 'unknown' || stage === 'emailed' || stage === 'office_alerted';
+      if (!done && Date.now() - startedAt < RL_POLL_MAX_MS) state._rlPollTimer = setTimeout(tick, RL_POLL_MS);
+    };
+    state._rlPollTimer = setTimeout(tick, RL_POLL_MS);
   }
 
   function renderRescheduleLookupPage() {
@@ -2453,7 +2520,7 @@
         try {
           const r = await api('POST', '/reschedule-start', { phone: state._rlPhone });
           state._rlResult = { ok: !!(r && r.ok), text: (r && r.text) || '' };
-          if (r && r.ok) { state._rlStage = 'code'; state._rlCode = ''; }
+          if (r && r.ok) { state._rlStage = 'code'; state._rlCode = ''; state._rlDeliveryStage = null; startRlPoll(r.sendId || null); }   // v1.35
         } catch (err) {
           const t = err && err.body && err.body.text;
           state._rlResult = { ok: false, text: t || ('Something went wrong. Please call us at ' + CONFIG.companyPhone + '.') };
@@ -2469,6 +2536,7 @@
         try {
           const r = await api('POST', '/reschedule-verify', { phone: state._rlPhone, code: state._rlCode });
           if (r && r.ok) {
+            stopRlPoll();   // v1.35
             state._rlStage = 'list';
             state._rlAppts = Array.isArray(r.appointments) ? r.appointments : [];
             state._rlFirstName = r.firstName || '';
@@ -2484,6 +2552,7 @@
         break;
       }
       case 'rl-change':
+        stopRlPoll();   // v1.35
         state._rlStage = 'phone'; state._rlResult = null; state._rlCode = '';
         render();
         break;

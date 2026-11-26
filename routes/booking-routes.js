@@ -257,6 +257,14 @@ function proxyWithText(enginePath) {
 }
 router.post('/reschedule-start', rateLimit, rescheduleLinkLimit, proxyWithText('/reschedule-start'));
 router.post('/reschedule-verify', rateLimit, proxyWithText('/reschedule-verify'));
+// v2.351.0 — the code screen polls the delivery fallback's stage. Thin proxy, no logic.
+router.get('/reschedule-code/status', rateLimit, async (req, res) => {
+  try {
+    res.json(await bookingAdapter.request('GET', '/reschedule-code/status', null, { sendId: String((req.query && req.query.sendId) || '').slice(0, 64) }));
+  } catch (err) {
+    res.json({ stage: 'unknown', maskedEmail: '' });
+  }
+});
 
 // ========================================
 // POST /api/booking/abandon — Proxy to engine
