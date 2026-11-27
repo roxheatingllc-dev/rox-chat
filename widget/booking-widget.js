@@ -1,5 +1,11 @@
 /**
- * ROX Booking Widget v1.36 - "We emailed a link" when the email carries one
+ * ROX Booking Widget v1.37 - "Try and get you in sooner" (no promise)
+ *
+ * v1.37 Changes (2026-11-27, server v2.363.0):
+ *   - Jason: the red "Is your system not working at all?" box and its confirmation now say the
+ *     office will call "to try and get you in sooner", not "to get you in sooner".
+ *
+ * v1.36 - "We emailed a link" when the email carries one
  *
  * v1.36 Changes (2026-11-26, server v2.353.0):
  *   - When the code text fails and the server emails the customer (the address
@@ -1419,7 +1425,7 @@
     const soonerHtml = (sooner && !state._soonerSent)
       ? `<div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:10px;padding:14px 16px;margin-bottom:14px;color:#7F1D1D;">`
         + `<div style="font-size:15px;font-weight:700;margin-bottom:6px;">\uD83D\uDD25 Is your system not working at all?</div>`
-        + `<div style="font-size:14px;margin-bottom:12px;">Our first opening online is <strong>${escapeHtml(sooner.displayDate || '')}</strong>. If you have no heat, no cooling, or a leaking water heater, don't wait \u2014 our office will call you to get you in sooner.</div>`
+        + `<div style="font-size:14px;margin-bottom:12px;">Our first opening online is <strong>${escapeHtml(sooner.displayDate || '')}</strong>. If you have no heat, no cooling, or a leaking water heater, don't wait \u2014 our office will call you to try and get you in sooner.</div>`
         + `<button data-action="sooner-call" style="width:100%;padding:12px 16px;font-size:15px;font-weight:700;color:#fff;background:#DC2626;border:none;border-radius:8px;cursor:pointer;">My system is down \u2014 call me</button>`
         + `<div style="font-size:12px;margin-top:8px;color:#991B1B;text-align:center;">Or pick a date below.</div>`
         + `</div>`
@@ -2474,7 +2480,7 @@
         state._soonerBusy = true; state.error = null; render();
         try {
           const r = await api('POST', '/urgent-callback', { sessionId: state.sessionId, issue: state.data.issue || '' });
-          state._soonerSent = (r && r.callbackText) || 'Our office will call you to get you in sooner.';
+          state._soonerSent = (r && r.callbackText) || 'Our office will call you to try and get you in sooner.';
           state._soonerShowCal = false;
         } catch (err) {
           state.error = 'We could not send that. Please call us at ' + CONFIG.companyPhone + ' and we\u2019ll get you in as soon as we can.';
